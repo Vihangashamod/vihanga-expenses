@@ -1,9 +1,10 @@
-import { Repeat } from "lucide-react";
+import { Repeat, Globe } from "lucide-react";
 import type { Transaction } from "../lib/types";
 import { getCategory } from "../lib/categories";
 import { dayLabel, money } from "../lib/format";
 import { CatTile } from "./bits";
 import { useUI } from "../data/ui";
+import { useStore } from "../data/store";
 
 export function sortTx(a: Transaction, b: Transaction) {
   return b.date.localeCompare(a.date) || (b.createdAt || 0) - (a.createdAt || 0);
@@ -11,19 +12,34 @@ export function sortTx(a: Transaction, b: Transaction) {
 
 export function TxRow({ t, showDate }: { t: Transaction; showDate?: boolean }) {
   const { openSheet } = useUI();
+  const { settings } = useStore();
   const c = getCategory(t.categoryId);
+  const accName = (id?: string) => settings.accounts.find((a) => a.id === id)?.name;
+  const multi = settings.accounts.length > 1;
+  const isXfer = t.type === "transfer";
+  const title = t.note || (isXfer ? "Transfer" : c.name);
+  const bits = [
+    isXfer ? `${accName(t.accountId) ?? "?"} → ${accName(t.toAccountId) ?? "?"}` : c.name,
+    !isXfer && multi && accName(t.accountId ?? settings.defaultAccountId),
+    showDate && dayLabel(t.date),
+  ].filter(Boolean);
+
   return (
-    <button className="tx-row" onClick={() => openSheet({ tx: t })} aria-label={`Edit ${t.note || c.name}, ${money(t.amount)}`}>
-      <CatTile id={t.categoryId} />
+    <button className="tx-row" onClick={() => openSheet({ tx: t })} aria-label={`Edit ${title}, ${money(t.amount)}`}>
+      <CatTile id={isXfer ? "transfer" : t.categoryId} />
       <span className="t">
-        <b>{t.note || c.name}</b>
+        <b>{title}</b>
         <small>
           {t.recurringId && <Repeat aria-label="Recurring" />}
-          {c.name}{showDate ? ` · ${dayLabel(t.date)}` : ""}
+          {t.originalCurrency && <Globe aria-label="Foreign currency" />}
+          {bits.join(" · ")}
         </small>
       </span>
-      <span className={`amt ${t.type === "income" ? "in" : ""}`}>
-        {t.type === "income" ? "+" : "−"}{money(t.amount, { exact: true })}
+      <span className={`amt ${t.type === "income" ? "in" : isXfer ? "xfer" : ""}`}>
+        {t.type === "income" ? "+" : isXfer ? "" : "−"}{money(t.amount, { exact: true })}
+        {t.originalCurrency && t.originalAmount != null && (
+          <span className="fx-note">{money(t.originalAmount, { currency: t.originalCurrency, exact: true })}</span>
+        )}
       </span>
     </button>
   );
@@ -39,10 +55,10 @@ export function TxGroups({ items }: { items: Transaction[] }) {
   return (
     <div>
       {[...groups.entries()].map(([date, list]) => {
-        const net = list.reduce((s, t) => s + (t.type === "income" ? t.amount : -t.amount), 0);
+        const net = list.reduce((s, t) => s + (t.type === "income" ? t.amount : t.type === "expense" ? -t.amount : 0), 0);
         return (
           <section className="tx-group" key={date}>
-            <div className="tx-day"><span>{dayLabel(date)}</span><span className="num">{money(net, { sign: true })}</span></div>
+            <div className="tx-day"><span>{dayLabel(date)}</span><span className="num">{net ? money(net, { sign: true }) : ""}</span></div>
             {list.map((t) => <TxRow key={t.id} t={t} />)}
           </section>
         );

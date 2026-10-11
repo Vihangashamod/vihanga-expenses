@@ -8,7 +8,7 @@ import { CatTile, MonthSwitch } from "../components/bits";
 import { CashflowChart, CategoryDonut } from "../components/charts";
 
 export default function Insights() {
-  const { transactions } = useStore();
+  const { transactions, settings } = useStore();
   const { month, openSheet } = useUI();
   const s = summarize(transactions, month);
   const pFull = summarize(transactions, shiftMonth(month, -1));
@@ -30,7 +30,7 @@ export default function Insights() {
   exp.forEach((t) => { const [y, m, d] = t.date.split("-").map(Number); byDow[new Date(y, m - 1, d).getDay()] += t.amount; });
   const dowNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const maxDow = Math.max(...byDow, 1);
-  const order = [1, 2, 3, 4, 5, 6, 0];
+  const order = settings.weekStart === 0 ? [0, 1, 2, 3, 4, 5, 6] : [1, 2, 3, 4, 5, 6, 0];
 
   // Change by category vs last month
   const ids = new Set([...s.byCategory.map((c) => c.id), ...p.byCategory.map((c) => c.id)]);

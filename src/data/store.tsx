@@ -4,14 +4,15 @@ import {
   collection, deleteDoc, doc, getDocs, onSnapshot, setDoc, writeBatch,
 } from "firebase/firestore";
 import { auth, db, googleProvider } from "../lib/firebase";
-import { DEFAULT_SETTINGS, type Recurring, type Settings, type Transaction } from "../lib/types";
-import { daysInMonth, thisMonth, uid } from "../lib/format";
-import { LEGACY_CATEGORY_MAP } from "../lib/categories";
+import { DEFAULT_SETTINGS, withDefaults, type Recurring, type Settings, type Transaction } from "../lib/types";
+import { configureMoney, daysInMonth, thisMonth, uid } from "../lib/format";
+import { LEGACY_CATEGORY_MAP, setCategoryRegistry } from "../lib/categories";
 import { demoData } from "./demo";
 
 export type Status = "loading" | "signed-out" | "ready";
 export type Sync = "synced" | "saving" | "offline" | "error";
 
+export interface Backup { app: "vihanga-expenses"; version: 2; exportedAt: string; transactions: Transaction[]; recurring: Recurring[]; settings: Settings }
 export interface LegacyBundle { transactions: Transaction[]; source: string }
 
 interface Store {
@@ -30,6 +31,10 @@ interface Store {
   saveRecurring: (r: Recurring) => Promise<void>;
   deleteRecurring: (id: string) => Promise<void>;
   importLegacy: () => Promise<number>;
+  saveMany: (txs: Transaction[]) => Promise<void>;
+  restoreBackup: (b: Backup) => Promise<number>;
+  deleteAllData: () => Promise<void>;
+  changeBaseCurrency: (code: string, factor: number | null) => Promise<void>;
   dismissLegacy: () => Promise<void>;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -115,8 +120,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         markLoaded("rec");
       }, onErr));
       unsubs.push(onSnapshot(doc(db, ...base, "meta", "settings"), (snap) => {
-        const data = snap.exists() ? (snap.data() as Partial<Settings>) : {};
-        setSettings({ ...DEFAULT_SETTINGS, ...data, budgets: data.budgets ?? {} });
+        setSettings(withDefaults(snap.exists() ? (snap.data() as Partial<Settings>) : {}));
         markLoaded("set");
       }, onErr));
     });
@@ -148,7 +152,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     due.forEach((r) => {
       const id = `rec_${r.id}_${mk}`;
       const day = String(Math.min(r.dayOfMonth, daysInMonth(mk))).padStart(2, "0");
-      const t: Transaction = { id, type: r.type, amount: r.amount, categoryId: r.categoryId, note: r.note, date: `${mk}-${day}`, createdAt: Date.now(), recurringId: r.id };
+      const t: Transaction = { id, type: r.type, amount: r.amount, categoryId: r.categoryId, note: r.note, date: `${mk}-${day}`, createdAt: Date.now(), recurringId: r.id, ...(r.accountId ? { accountId: r.accountId } : {}) };
       batch.set(doc(db, ...userPath("transactions", id)), t);
       batch.set(doc(db, ...userPath("recurring", r.id)), { lastPosted: mk }, { merge: true });
     });
@@ -252,6 +256,70 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!demo) await setDoc(doc(db, ...userPath("meta", "settings")), { legacyImported: true }, { merge: true });
   }, [demo, userPath]);
 
+  /** Writes many documents in batches of 400 (Firestore allows 500 per batch). */
+  const commitInBatches = useCallback(async (ops: ((b: ReturnType<typeof writeBatch>) => void)[]) => {
+    for (let i = 0; i < ops.length; i += 400) {
+      const batch = writeBatch(db);
+      ops.slice(i, i + 400).forEach((op) => op(batch));
+      await batch.commit();
+    }
+  }, []);
+
+  const saveMany = useCallback(async (txs: Transaction[]) => {
+    if (demo) { setTransactions((xs) => { const ids = new Set(txs.map((t) => t.id)); return [...xs.filter((x) => !ids.has(x.id)), ...txs]; }); return; }
+    await guard(() => commitInBatches(txs.map((t) => (b) => b.set(doc(db, ...userPath("transactions", t.id)), t))));
+  }, [demo, guard, commitInBatches, userPath]);
+
+  const restoreBackup = useCallback(async (bk: Backup) => {
+    const txs = (bk.transactions ?? []).filter((t) => t && t.id && t.date && Number(t.amount) > 0);
+    const rec = (bk.recurring ?? []).filter((r) => r && r.id);
+    const st = withDefaults(bk.settings ?? {});
+    if (demo) { setTransactions(txs); setRecurring(rec); setSettings(st); return txs.length; }
+    await guard(async () => {
+      await commitInBatches([
+        ...txs.map((t) => (b: ReturnType<typeof writeBatch>) => b.set(doc(db, ...userPath("transactions", t.id)), t)),
+        ...rec.map((r) => (b: ReturnType<typeof writeBatch>) => b.set(doc(db, ...userPath("recurring", r.id)), r)),
+      ]);
+      await setDoc(doc(db, ...userPath("meta", "settings")), { ...st, legacyImported: true });
+    });
+    return txs.length;
+  }, [demo, guard, commitInBatches, userPath]);
+
+  const deleteAllData = useCallback(async () => {
+    if (demo) { setTransactions([]); setRecurring([]); setSettings({ ...DEFAULT_SETTINGS, legacyImported: true }); return; }
+    await guard(async () => {
+      await commitInBatches([
+        ...transactions.map((t) => (b: ReturnType<typeof writeBatch>) => b.delete(doc(db, ...userPath("transactions", t.id)))),
+        ...recurring.map((r) => (b: ReturnType<typeof writeBatch>) => b.delete(doc(db, ...userPath("recurring", r.id)))),
+      ]);
+      await setDoc(doc(db, ...userPath("meta", "settings")), { ...DEFAULT_SETTINGS, legacyImported: true });
+    });
+  }, [demo, guard, commitInBatches, userPath, transactions, recurring]);
+
+  /** Switches the base currency. With a factor, every stored amount is converted (new = old × factor). */
+  const changeBaseCurrency = useCallback(async (code: string, factor: number | null) => {
+    const f = factor ?? 1;
+    const conv = (n: number | undefined) => (n == null ? n : Math.round(n * f * 100) / 100);
+    const next: Settings = {
+      ...settings, currency: code,
+      monthlyBudget: conv(settings.monthlyBudget),
+      budgets: Object.fromEntries(Object.entries(settings.budgets).map(([k, v]) => [k, conv(v)!])),
+      accounts: settings.accounts.map((a) => ({ ...a, openingBalance: conv(a.openingBalance)! })),
+    };
+    const txs = factor ? transactions.map((t) => ({ ...t, amount: conv(t.amount)!, ...(t.rate ? { rate: Math.round(t.rate * f * 1e6) / 1e6 } : {}) })) : [];
+    const rec = factor ? recurring.map((r) => ({ ...r, amount: conv(r.amount)! })) : [];
+    if (demo) { setSettings(next); if (factor) { setTransactions(txs); setRecurring(rec); } return; }
+    await guard(async () => {
+      if (factor) {
+        await commitInBatches([
+          ...txs.map((t) => (b: ReturnType<typeof writeBatch>) => b.set(doc(db, ...userPath("transactions", t.id)), t)),
+          ...rec.map((r) => (b: ReturnType<typeof writeBatch>) => b.set(doc(db, ...userPath("recurring", r.id)), r)),
+        ]);
+      }
+      await setDoc(doc(db, ...userPath("meta", "settings")), next);
+    });
+  }, [demo, guard, commitInBatches, userPath, settings, transactions, recurring]);
+
   const signIn = useCallback(async () => {
     setError(null);
     try {
@@ -272,12 +340,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [demo]);
 
   void loadTick;
+  // Formatting and the category list follow settings; set them before children render.
+  configureMoney({ currency: settings.currency, showCents: settings.showCents, privacy: settings.privacy });
+  setCategoryRegistry(settings.customCategories, settings.hiddenCategories);
+
   const value: Store = {
     status, demo, sync, error, transactions, recurring, settings, legacy,
     user: demo
       ? { name: "Vihanga (demo)", email: "demo mode" }
       : user ? { name: user.displayName ?? "You", email: user.email ?? "", photo: user.photoURL ?? undefined } : null,
     saveTransaction, deleteTransaction, saveSettings, saveRecurring, deleteRecurring, importLegacy, dismissLegacy, signIn, signOut,
+    saveMany, restoreBackup, deleteAllData, changeBaseCurrency,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

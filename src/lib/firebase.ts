@@ -23,7 +23,10 @@ googleProvider.setCustomParameters({ prompt: "select_account" });
 let db: Firestore;
 try {
   // Offline cache: the app keeps working without a connection and syncs later.
-  db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
+  db = initializeFirestore(app, {
+    ignoreUndefinedProperties: true,
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+  });
 } catch {
   db = getFirestore(app);
 }

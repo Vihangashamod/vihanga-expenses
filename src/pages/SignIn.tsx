@@ -7,8 +7,8 @@ export default function SignIn() {
   return (
     <div className="signin">
       <div className="signin-card">
-        <div className="brand"><Logo /><span>Vihanga's Expenses<small>Personal finance · LKR</small></span></div>
-        <h1>Know where every rupee goes.</h1>
+        <div className="brand"><Logo /><span>Vihanga's Expenses<small>Personal finance</small></span></div>
+        <h1>Know where your money goes.</h1>
         <p>Track spending and income, set budgets, and see your month at a glance on any device.</p>
         <ul>
           <li><CheckCircle2 />Syncs between your phone and laptop</li>

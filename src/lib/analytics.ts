@@ -50,6 +50,29 @@ export function cumulative(txs: Transaction[], mk: string): number[] {
   return per;
 }
 
+/** Current balance of each account. Entries without an account belong to the default account. */
+export function balances(accounts: { id: string; openingBalance: number }[], txs: Transaction[], defaultId?: string): Map<string, number> {
+  const fallback = defaultId && accounts.some((a) => a.id === defaultId) ? defaultId : accounts[0]?.id;
+  const out = new Map(accounts.map((a) => [a.id, Number(a.openingBalance) || 0]));
+  const add = (id: string | undefined, v: number) => {
+    const key = id && out.has(id) ? id : fallback;
+    if (key) out.set(key, (out.get(key) ?? 0) + v);
+  };
+  txs.forEach((t) => {
+    const v = Number(t.amount) || 0;
+    if (t.type === "income") add(t.accountId, v);
+    else if (t.type === "expense") add(t.accountId, -v);
+    else { add(t.accountId, -v); add(t.toAccountId, v); }
+  });
+  return out;
+}
+
+/** The account an entry counts against, resolving missing ids to the default. */
+export function accountOf(t: Transaction, accountIds: string[], defaultId?: string): string | undefined {
+  if (t.accountId && accountIds.includes(t.accountId)) return t.accountId;
+  return defaultId && accountIds.includes(defaultId) ? defaultId : accountIds[0];
+}
+
 export function lastMonths(mk: string, n: number): string[] {
   return Array.from({ length: n }, (_, i) => shiftMonth(mk, i - n + 1));
 }

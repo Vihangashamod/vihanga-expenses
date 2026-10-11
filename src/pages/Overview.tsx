@@ -2,8 +2,9 @@ import { Link } from "react-router-dom";
 import { ArrowDownLeft, ArrowUpRight, CalendarClock, Wallet, Gauge, Plus, Receipt } from "lucide-react";
 import { useStore } from "../data/store";
 import { useUI } from "../data/ui";
-import { cumulative, summarize } from "../lib/analytics";
-import { daysInMonth, money, monthLabel, shiftMonth, thisMonth } from "../lib/format";
+import { balances, cumulative, summarize } from "../lib/analytics";
+import { AccountIcon } from "../components/AccountIcon";
+import { currencySymbol, daysInMonth, isPrivate, money, monthLabel, shiftMonth, thisMonth } from "../lib/format";
 import { getCategory } from "../lib/categories";
 import { CatTile, MonthSwitch } from "../components/bits";
 import { TxRow, sortTx } from "../components/TxList";
@@ -53,6 +54,8 @@ export default function Overview() {
     .filter((b) => b.limit > 0 && b.spent / b.limit >= 0.8)
     .sort((a, b) => b.spent / b.limit - a.spent / a.limit);
 
+  const bal = balances(settings.accounts, transactions, settings.defaultAccountId);
+  const netWorth = [...bal.values()].reduce((a, b) => a + b, 0);
   const firstName = (settings.displayName || user?.name || "").split(" ")[0];
 
   return (
@@ -68,7 +71,7 @@ export default function Overview() {
       <section className="hero" aria-label="Month summary">
         <div className="hero-left">
           <div className="eyebrow">Spent in {monthLabel(month, "long", false)}</div>
-          <div className="big"><span className="cur">Rs</span>{Math.round(s.expense).toLocaleString("en-US")}</div>
+          <div className="big"><span className="cur">{currencySymbol()}</span>{isPrivate() ? "••••" : Math.round(s.expense).toLocaleString("en-US")}</div>
           <div className="sub"><span className="pace" data-k={k}><i />{chip}</span><span>{line}</span></div>
           {reference > 0 && (
             <div className="meter">
@@ -94,6 +97,23 @@ export default function Overview() {
           </div>
         </dl>
       </section>
+
+      {settings.accounts.filter((a) => !a.archived).length > 1 && (
+        <section className="card">
+          <div className="card-head"><h2>Accounts</h2><span style={{ display: "flex", gap: 14, alignItems: "baseline" }}><span className="meta">Net worth <b className="num" style={{ color: "var(--ink)" }}>{money(netWorth)}</b></span><Link className="more" to="/accounts">Manage</Link></span></div>
+          <div className="acct-strip">
+            {settings.accounts.filter((a) => !a.archived).map((a) => {
+              const b = bal.get(a.id) ?? 0;
+              return (
+                <Link key={a.id} to="/accounts" className="acct" style={{ textDecoration: "none", color: "inherit" }}>
+                  <span className="acct-top"><AccountIcon kind={a.kind} color={a.color} tile /><span style={{ minWidth: 0 }}><b>{a.name}</b></span></span>
+                  <span className={`acct-bal ${b < 0 ? "neg" : ""}`}>{money(b)}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       <div className="grid-2">
         <section className="card">

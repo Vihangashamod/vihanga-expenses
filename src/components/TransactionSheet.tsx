@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Trash2, X } from "lucide-react";
+import { ArrowDown, Trash2, X } from "lucide-react";
 import { useStore, newId } from "../data/store";
 import { useUI } from "../data/ui";
-import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, getCategory } from "../lib/categories";
+import { getCategory, pickable } from "../lib/categories";
+import { CURRENCIES, getCurrency, rateToBase } from "../lib/currency";
 import { money, parseAmount, thisMonth, todayISO } from "../lib/format";
-import type { Transaction, TxType } from "../lib/types";
+import type { CatType, Transaction, TxType } from "../lib/types";
 import { CatTile } from "./bits";
+import { AccountIcon } from "./AccountIcon";
 
 export function TransactionSheet() {
   const { sheet, closeSheet } = useUI();
@@ -14,13 +16,22 @@ export function TransactionSheet() {
 }
 
 function SheetBody({ tx, initialType, onClose }: { tx?: Transaction; initialType?: TxType; onClose: () => void }) {
-  const { saveTransaction, deleteTransaction, saveRecurring, transactions } = useStore();
+  const { saveTransaction, deleteTransaction, saveRecurring, transactions, settings } = useStore();
   const { notify, month, setMonth } = useUI();
+  const base = settings.currency;
+  const accounts = settings.accounts.filter((a) => !a.archived || a.id === tx?.accountId || a.id === tx?.toAccountId);
+  const defaultAcc = accounts.find((a) => a.id === settings.defaultAccountId)?.id ?? accounts[0]?.id ?? "";
   const editing = !!tx;
-  const defaultDate = month === thisMonth() || month > thisMonth() ? todayISO() : `${month}-01`;
+  const defaultDate = month >= thisMonth() ? todayISO() : `${month}-01`;
+
   const [type, setType] = useState<TxType>(tx?.type ?? initialType ?? "expense");
-  const [amount, setAmount] = useState(tx ? String(tx.amount) : "");
+  const [currency, setCurrency] = useState(tx?.originalCurrency ?? base);
+  const [amount, setAmount] = useState(tx ? String(tx.originalAmount ?? tx.amount) : "");
+  const [rate, setRate] = useState(tx?.rate ? String(tx.rate) : "");
+  const [rateState, setRateState] = useState<"idle" | "loading" | "live" | "manual" | "failed">(tx?.rate ? "manual" : "idle");
   const [categoryId, setCategoryId] = useState(tx?.categoryId ?? (initialType === "income" ? "salary" : "groceries"));
+  const [accountId, setAccountId] = useState(tx?.accountId ?? defaultAcc);
+  const [toAccountId, setToAccountId] = useState(tx?.toAccountId ?? accounts.find((a) => a.id !== (tx?.accountId ?? defaultAcc))?.id ?? "");
   const [note, setNote] = useState(tx?.note ?? "");
   const [date, setDate] = useState(tx?.date ?? defaultDate);
   const [repeat, setRepeat] = useState(false);
@@ -30,7 +41,10 @@ function SheetBody({ tx, initialType, onClose }: { tx?: Transaction; initialType
   const amountRef = useRef<HTMLInputElement>(null);
   const userPickedCat = useRef(editing);
 
-  const cats = type === "expense" ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
+  const foreign = currency !== base;
+  const cats = type === "transfer" ? [] : pickable(type as CatType);
+  // Keep a category that's been hidden since, so editing old entries works.
+  if (tx && type !== "transfer" && !cats.some((c) => c.id === categoryId) && getCategory(categoryId).type === type) cats.push(getCategory(categoryId));
 
   useEffect(() => {
     const t = window.setTimeout(() => amountRef.current?.focus(), 60);
@@ -40,12 +54,27 @@ function SheetBody({ tx, initialType, onClose }: { tx?: Transaction; initialType
     return () => { clearTimeout(t); removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
   }, [onClose]);
 
+  // Look up a live rate when a foreign currency is picked (unless one was typed).
+  useEffect(() => {
+    if (!foreign) { setRateState("idle"); return; }
+    if (rateState === "manual" && rate) return;
+    let cancelled = false;
+    setRateState("loading");
+    rateToBase(currency, base).then((r) => {
+      if (cancelled) return;
+      if (r) { setRate(String(+r.toFixed(r < 1 ? 6 : 4))); setRateState("live"); }
+      else setRateState("failed");
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currency, base]);
+
   const switchType = (t: TxType) => {
     setType(t);
-    if (getCategory(categoryId).type !== t) setCategoryId(t === "income" ? "salary" : "groceries");
+    if (t !== "transfer" && getCategory(categoryId).type !== t) setCategoryId(t === "income" ? "salary" : "groceries");
+    if (t === "transfer") { setCurrency(base); if (toAccountId === accountId) setToAccountId(accounts.find((a) => a.id !== accountId)?.id ?? ""); }
   };
 
-  // Notes you've used before, most recent first, for this type
   const suggestions = useMemo(() => {
     const seen = new Map<string, Transaction>();
     [...transactions].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).forEach((t) => {
@@ -59,32 +88,45 @@ function SheetBody({ tx, initialType, onClose }: { tx?: Transaction; initialType
     if (editing) return;
     const match = suggestions.find((s) => s.note.toLowerCase() === v.trim().toLowerCase());
     if (match) {
-      if (!userPickedCat.current) setCategoryId(match.categoryId);
-      if (!amount) setAmount(String(match.amount));
+      if (!userPickedCat.current && type !== "transfer") setCategoryId(match.categoryId);
+      if (match.accountId && accounts.some((a) => a.id === match.accountId)) setAccountId(match.accountId);
+      if (!amount) {
+        if (match.originalCurrency) { setCurrency(match.originalCurrency); setAmount(String(match.originalAmount)); }
+        else setAmount(String(match.amount));
+      }
     }
   };
 
+  const n = parseAmount(amount);
+  const r = foreign ? parseAmount(rate) : 1;
+  const converted = n > 0 && r > 0 ? Math.round(n * r * 100) / 100 : 0;
+
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
-    const n = parseAmount(amount);
     if (!(n > 0)) { setErr("Enter an amount above zero."); amountRef.current?.focus(); return; }
+    if (foreign && !(r > 0)) { setErr(`Enter the exchange rate: how many ${base} one ${currency} is worth.`); return; }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { setErr("Choose a date."); return; }
+    if (type === "transfer" && (!accountId || !toAccountId || accountId === toAccountId)) { setErr("Pick two different accounts for a transfer."); return; }
     setBusy(true);
-    const rid = repeat && !editing ? newId() : tx?.recurringId;
+    const rid = repeat && !editing && type !== "transfer" ? newId() : tx?.recurringId;
     const t: Transaction = {
-      id: tx?.id ?? newId(), type, amount: n, categoryId, note: note.trim(), date,
-      createdAt: tx?.createdAt ?? Date.now(), ...(rid ? { recurringId: rid } : {}),
+      id: tx?.id ?? newId(), type, amount: converted, categoryId: type === "transfer" ? "transfer" : categoryId,
+      note: note.trim(), date, createdAt: tx?.createdAt ?? Date.now(),
+      ...(accountId ? { accountId } : {}),
+      ...(type === "transfer" ? { toAccountId } : {}),
+      ...(foreign ? { originalCurrency: currency, originalAmount: n, rate: r } : {}),
+      ...(rid ? { recurringId: rid } : {}),
     };
     try {
-      // Writes are applied locally at once; don't block the UI waiting for the server.
       const writes = [saveTransaction(t)];
-      if (repeat && !editing && rid) {
-        writes.push(saveRecurring({ id: rid, type, amount: n, categoryId, note: t.note || getCategory(categoryId).name,
+      if (repeat && !editing && rid && type !== "transfer") {
+        writes.push(saveRecurring({ id: rid, type: type as CatType, amount: converted, categoryId, note: t.note || getCategory(categoryId).name, accountId,
           dayOfMonth: Math.min(Number(date.slice(8, 10)), 28), active: true, lastPosted: date.slice(0, 7), createdAt: Date.now() }));
       }
       onClose();
       if (date.slice(0, 7) !== month) setMonth(date.slice(0, 7));
-      notify(editing ? "Changes saved" : `${type === "income" ? "Income" : "Expense"} added · ${money(n)}`);
+      const label = type === "income" ? "Income added" : type === "transfer" ? "Transfer saved" : "Expense added";
+      notify(editing ? "Changes saved" : `${label} · ${foreign ? `${money(n, { currency, exact: true })} = ` : ""}${money(converted)}`);
       await Promise.all(writes);
     } catch (e2) {
       setBusy(false);
@@ -99,6 +141,9 @@ function SheetBody({ tx, initialType, onClose }: { tx?: Transaction; initialType
     notify("Transaction deleted", { label: "Undo", run: () => { void saveTransaction(tx); } });
   };
 
+  const favs = [base, ...settings.favoriteCurrencies.filter((c) => c !== base)];
+  const curOptions = [...favs.map(getCurrency), ...CURRENCIES.filter((c) => !favs.includes(c.code))];
+
   return (
     <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <form className="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" onSubmit={save} noValidate>
@@ -111,45 +156,86 @@ function SheetBody({ tx, initialType, onClose }: { tx?: Transaction; initialType
         <div className="seg full" role="group" aria-label="Type">
           <button type="button" aria-pressed={type === "expense"} onClick={() => switchType("expense")}>Expense</button>
           <button type="button" aria-pressed={type === "income"} onClick={() => switchType("income")}>Income</button>
+          {accounts.length > 1 && <button type="button" aria-pressed={type === "transfer"} onClick={() => switchType("transfer")}>Transfer</button>}
         </div>
 
-        <label className="amount-field">
-          <span>Rs</span>
+        <div className="amount-field">
+          {type !== "transfer" ? (
+            <select className="cur-select" value={currency} onChange={(e) => { setCurrency(e.target.value); setRateState("idle"); setErr(""); }} aria-label="Currency">
+              {curOptions.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
+            </select>
+          ) : <span>{getCurrency(base).symbol}</span>}
           <input
-            id="tx-amount" ref={amountRef} inputMode="decimal" autoComplete="off" placeholder="0" aria-label="Amount in rupees"
-            value={amount} style={{ width: `${Math.max(amount.length, 1) + 0.6}ch` }} onChange={(e) => { setAmount(e.target.value.replace(/[^\d.,]/g, "")); setErr(""); }}
+            id="tx-amount" ref={amountRef} inputMode="decimal" autoComplete="off" placeholder="0" aria-label={`Amount in ${currency}`}
+            value={amount} style={{ width: `${Math.max(amount.length, 1) + 0.6}ch` }}
+            onChange={(e) => { setAmount(e.target.value.replace(/[^\d.,]/g, "")); setErr(""); }}
           />
-        </label>
-
-        <span className="label" id="cat-label">Category</span>
-        <div className="cat-grid" role="radiogroup" aria-labelledby="cat-label">
-          {cats.map((c) => (
-            <button
-              type="button" key={c.id} role="radio" aria-checked={categoryId === c.id} className="cat-opt"
-              onClick={() => { setCategoryId(c.id); userPickedCat.current = true; }}
-            >
-              <CatTile id={c.id} size="sm" />
-              {c.name}
-            </button>
-          ))}
         </div>
 
-        <div className="field">
-          <label className="label" htmlFor="tx-note">Note</label>
-          <input id="tx-note" className="input" list="tx-notes" autoComplete="off" maxLength={80}
-            placeholder={type === "expense" ? "e.g. Keells weekly shop" : "e.g. October salary"} value={note} onChange={(e) => onNote(e.target.value)} />
-          <datalist id="tx-notes">{suggestions.map((s) => <option key={s.id} value={s.note} />)}</datalist>
+        {foreign && (
+          <div className="fx">
+            <label htmlFor="tx-rate">1 {currency} =</label>
+            <input id="tx-rate" className="input" inputMode="decimal" value={rate} placeholder={rateState === "loading" ? "Loading…" : "Rate"}
+              onChange={(e) => { setRate(e.target.value.replace(/[^\d.,]/g, "")); setRateState("manual"); }} />
+            <span>{base}</span>
+            <small>
+              {rateState === "live" ? "Today's rate" : rateState === "loading" ? "Getting today's rate…" : rateState === "failed" ? "Couldn't get a live rate. Type it in." : "Your rate"}
+              {converted > 0 && <> · <b>{money(converted, { exact: true })}</b></>}
+            </small>
+          </div>
+        )}
+
+        {type === "transfer" ? (
+          <div className="transfer">
+            <AccountPicker label="From" value={accountId} onChange={setAccountId} accounts={accounts} />
+            <span className="transfer-arrow" aria-hidden="true"><ArrowDown /></span>
+            <AccountPicker label="To" value={toAccountId} onChange={setToAccountId} accounts={accounts.filter((a) => a.id !== accountId)} />
+          </div>
+        ) : (
+          <>
+            <span className="label" id="cat-label">Category</span>
+            <div className="cat-grid" role="radiogroup" aria-labelledby="cat-label">
+              {cats.map((c) => (
+                <button type="button" key={c.id} role="radio" aria-checked={categoryId === c.id} className="cat-opt"
+                  onClick={() => { setCategoryId(c.id); userPickedCat.current = true; }}>
+                  <CatTile id={c.id} size="sm" />
+                  {c.name}
+                </button>
+              ))}
+            </div>
+            {accounts.length > 1 && (
+              <div className="field">
+                <span className="label" id="acc-label">{type === "income" ? "Paid into" : "Paid from"}</span>
+                <div className="chips" role="radiogroup" aria-labelledby="acc-label">
+                  {accounts.filter((a) => !a.archived || a.id === accountId).map((a) => (
+                    <button type="button" key={a.id} role="radio" aria-checked={accountId === a.id} className="chip-opt" onClick={() => setAccountId(a.id)}>
+                      <AccountIcon kind={a.kind} color={a.color} size={14} />{a.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        <div className="form-row field">
+          <div>
+            <label className="label" htmlFor="tx-note">Note</label>
+            <input id="tx-note" className="input" list="tx-notes" autoComplete="off" maxLength={80}
+              placeholder={type === "expense" ? "e.g. Keells weekly shop" : type === "income" ? "e.g. October salary" : "e.g. ATM withdrawal"}
+              value={note} onChange={(e) => onNote(e.target.value)} />
+            <datalist id="tx-notes">{suggestions.map((s) => <option key={s.id} value={s.note} />)}</datalist>
+          </div>
+          <div>
+            <label className="label" htmlFor="tx-date">Date</label>
+            <input id="tx-date" className="input" type="date" value={date} max="2100-12-31" onChange={(e) => setDate(e.target.value)} />
+          </div>
         </div>
 
-        <div className="field">
-          <label className="label" htmlFor="tx-date">Date</label>
-          <input id="tx-date" className="input" type="date" value={date} max="2100-12-31" onChange={(e) => setDate(e.target.value)} />
-        </div>
-
-        {!editing && (
+        {!editing && type !== "transfer" && (
           <div className="toggle">
             <span>Repeat every month<small>Adds it automatically on day {Math.min(Number(date.slice(8, 10)) || 1, 28)}.</small></span>
-            <button type="button" className="switch" role="switch" aria-checked={repeat} aria-label="Repeat every month" onClick={() => setRepeat((r) => !r)} />
+            <button type="button" className="switch" role="switch" aria-checked={repeat} aria-label="Repeat every month" onClick={() => setRepeat((v) => !v)} />
           </div>
         )}
 
@@ -166,12 +252,27 @@ function SheetBody({ tx, initialType, onClose }: { tx?: Transaction; initialType
         ) : (
           <div className="sheet-actions">
             <button type="submit" className="btn" disabled={busy}>{editing ? "Save changes" : `Add ${type}`}</button>
-            {editing && (
-              <button type="button" className="btn secondary" onClick={() => setConfirmDel(true)} aria-label="Delete transaction"><Trash2 /></button>
-            )}
+            {editing && <button type="button" className="btn secondary" onClick={() => setConfirmDel(true)} aria-label="Delete transaction"><Trash2 /></button>}
           </div>
         )}
       </form>
+    </div>
+  );
+}
+
+function AccountPicker({ label, value, onChange, accounts }: {
+  label: string; value: string; onChange: (id: string) => void; accounts: { id: string; name: string; kind: import("../lib/types").AccountKind; color: string }[];
+}) {
+  return (
+    <div>
+      <span className="label">{label}</span>
+      <div className="chips" role="radiogroup" aria-label={`${label} account`}>
+        {accounts.map((a) => (
+          <button type="button" key={a.id} role="radio" aria-checked={value === a.id} className="chip-opt" onClick={() => onChange(a.id)}>
+            <AccountIcon kind={a.kind} color={a.color} size={14} />{a.name}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

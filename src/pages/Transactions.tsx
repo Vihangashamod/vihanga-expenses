@@ -2,18 +2,24 @@ import { useMemo, useState } from "react";
 import { Search, Receipt, Plus, Download } from "lucide-react";
 import { useStore } from "../data/store";
 import { useUI } from "../data/ui";
-import { CATEGORIES, getCategory } from "../lib/categories";
+import { allOf, getCategory } from "../lib/categories";
 import { money, monthLabel } from "../lib/format";
 import { MonthSwitch } from "../components/bits";
 import { TxGroups, sortTx } from "../components/TxList";
-import type { Transaction } from "../lib/types";
+import type { Account, Transaction } from "../lib/types";
+import { accountOf } from "../lib/analytics";
 
-type Kind = "all" | "expense" | "income";
+type Kind = "all" | "expense" | "income" | "transfer";
 
-export function toCSV(items: Transaction[]) {
-  const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
-  return ["Date,Type,Category,Note,Amount (LKR)"]
-    .concat([...items].sort(sortTx).reverse().map((t) => [t.date, t.type, q(getCategory(t.categoryId).name), q(t.note), t.type === "income" ? t.amount : -t.amount].join(",")))
+export function toCSV(items: Transaction[], accounts: Account[], base: string) {
+  const q = (s: string) => `"${String(s ?? "").replace(/"/g, '""')}"`;
+  const acc = (id?: string) => accounts.find((a) => a.id === id)?.name ?? "";
+  return [`Date,Type,Category,Note,Account,To account,Amount (${base}),Original currency,Original amount,Rate`]
+    .concat([...items].sort(sortTx).reverse().map((t) => [
+      t.date, t.type, q(t.type === "transfer" ? "Transfer" : getCategory(t.categoryId).name), q(t.note), q(acc(t.accountId)), q(acc(t.toAccountId)),
+      t.type === "income" ? t.amount : t.type === "expense" ? -t.amount : t.amount,
+      t.originalCurrency ?? "", t.originalAmount ?? "", t.rate ?? "",
+    ].join(",")))
     .join("\n");
 }
 
@@ -25,7 +31,9 @@ export function downloadCSV(name: string, csv: string) {
 }
 
 export default function Transactions() {
-  const { transactions } = useStore();
+  const { transactions, settings } = useStore();
+  const [acc, setAcc] = useState("all");
+  const accIds = settings.accounts.map((a) => a.id);
   const { month, openSheet } = useUI();
   const [q, setQ] = useState("");
   const [kind, setKind] = useState<Kind>("all");
@@ -38,13 +46,14 @@ export default function Transactions() {
     return scope.filter((t) =>
       (kind === "all" || t.type === kind) &&
       (cat === "all" || t.categoryId === cat) &&
+      (acc === "all" || accountOf(t, accIds, settings.defaultAccountId) === acc || t.toAccountId === acc) &&
       (!needle || t.note.toLowerCase().includes(needle) || getCategory(t.categoryId).name.toLowerCase().includes(needle) || String(t.amount).includes(needle)));
-  }, [scope, q, kind, cat]);
+  }, [scope, q, kind, cat, acc, accIds, settings.defaultAccountId]);
 
   const income = shown.filter((t) => t.type === "income").reduce((s, t) => s + t.amount, 0);
   const expense = shown.filter((t) => t.type === "expense").reduce((s, t) => s + t.amount, 0);
-  const usedCats = CATEGORIES.filter((c) => scope.some((t) => t.categoryId === c.id));
-  const filtered = q || kind !== "all" || cat !== "all";
+  const usedCats = [...allOf("expense"), ...allOf("income")].filter((c) => scope.some((t) => t.categoryId === c.id));
+  const filtered = q || kind !== "all" || cat !== "all" || acc !== "all";
 
   return (
     <div className="page">
@@ -74,8 +83,8 @@ export default function Transactions() {
             <input id="tx-search" className="input" type="search" placeholder="Search notes, categories or amounts" value={q} onChange={(e) => setQ(e.target.value)} />
           </label>
           <div className="seg" role="group" aria-label="Type">
-            {(["all", "expense", "income"] as Kind[]).map((k) => (
-              <button key={k} aria-pressed={kind === k} onClick={() => setKind(k)}>{k === "all" ? "All" : k === "expense" ? "Expenses" : "Income"}</button>
+            {(["all", "expense", "income", "transfer"] as Kind[]).map((k) => (
+              <button key={k} aria-pressed={kind === k} onClick={() => setKind(k)}>{k === "all" ? "All" : k === "expense" ? "Expenses" : k === "income" ? "Income" : "Transfers"}</button>
             ))}
           </div>
           <label className="sr" htmlFor="tx-cat">Category</label>
@@ -83,7 +92,16 @@ export default function Transactions() {
             <option value="all">All categories</option>
             {usedCats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <button className="btn secondary" onClick={() => downloadCSV(`expenses-${allTime ? "all" : month}.csv`, toCSV(shown))} disabled={!shown.length}>
+          {settings.accounts.length > 1 && (
+            <>
+              <label className="sr" htmlFor="tx-acc">Account</label>
+              <select id="tx-acc" className="select" value={acc} onChange={(e) => setAcc(e.target.value)}>
+                <option value="all">All accounts</option>
+                {settings.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </>
+          )}
+          <button className="btn secondary" onClick={() => downloadCSV(`expenses-${allTime ? "all" : month}.csv`, toCSV(shown, settings.accounts, settings.currency))} disabled={!shown.length}>
             <Download />CSV
           </button>
         </div>

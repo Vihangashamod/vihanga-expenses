@@ -5,6 +5,7 @@ import { Shell } from "./components/Shell";
 import Overview from "./pages/Overview";
 import Transactions from "./pages/Transactions";
 import Budgets from "./pages/Budgets";
+import Accounts from "./pages/Accounts";
 import Insights from "./pages/Insights";
 import Settings from "./pages/Settings";
 import SignIn from "./pages/SignIn";
@@ -18,6 +19,7 @@ function Gate() {
       <Route element={<Shell />}>
         <Route index element={<Overview />} />
         <Route path="transactions" element={<Transactions />} />
+        <Route path="accounts" element={<Accounts />} />
         <Route path="budgets" element={<Budgets />} />
         <Route path="insights" element={<Insights />} />
         <Route path="settings" element={<Settings />} />

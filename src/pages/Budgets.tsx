@@ -3,8 +3,8 @@ import { Pencil, Check, X, Target } from "lucide-react";
 import { useStore } from "../data/store";
 import { useUI } from "../data/ui";
 import { summarize, inMonth, sum } from "../lib/analytics";
-import { EXPENSE_CATEGORIES, getCategory } from "../lib/categories";
-import { money, monthLabel, parseAmount, shiftMonth } from "../lib/format";
+import { allOf, getCategory, isHidden } from "../lib/categories";
+import { currencySymbol, money, monthLabel, parseAmount, shiftMonth } from "../lib/format";
 import { CatTile, MonthSwitch } from "../components/bits";
 
 function stateOf(spent: number, limit: number, expectedShare: number) {
@@ -17,7 +17,7 @@ function AmountEditor({ value, onSave, onCancel, label }: { value?: number; onSa
   const [v, setV] = useState(value ? String(value) : "");
   return (
     <form className="budget-edit" onSubmit={(e) => { e.preventDefault(); const n = parseAmount(v); if (n >= 0) onSave(n); }}>
-      <input className="input" autoFocus inputMode="decimal" aria-label={label} placeholder="Rs" value={v}
+      <input className="input" autoFocus inputMode="decimal" aria-label={label} placeholder={currencySymbol()} value={v}
         onChange={(e) => setV(e.target.value.replace(/[^\d.,]/g, ""))} onKeyDown={(e) => e.key === "Escape" && onCancel()} />
       <button className="icon-btn" type="submit" aria-label="Save"><Check /></button>
       <button className="icon-btn plain" type="button" onClick={onCancel} aria-label="Cancel"><X /></button>
@@ -38,6 +38,7 @@ export default function Budgets() {
   };
 
   const budgets = settings.budgets;
+  const EXPENSE_CATEGORIES = allOf("expense").filter((c) => !isHidden(c.id) || budgets[c.id] > 0);
   const withBudget = EXPENSE_CATEGORIES.filter((c) => budgets[c.id] > 0)
     .sort((a, b) => spentBy(b.id) / budgets[b.id] - spentBy(a.id) / budgets[a.id]);
   const without = EXPENSE_CATEGORIES.filter((c) => !(budgets[c.id] > 0))
@@ -58,7 +59,7 @@ export default function Budgets() {
   return (
     <div className="page">
       <div className="page-head">
-        <div><h1>Budgets</h1><p>Monthly limits, checked against what you've spent in {monthLabel(month)}.</p></div>
+        <div><h1>Budgets</h1><p>Monthly limits in {settings.currency}, checked against what you've spent in {monthLabel(month)}.</p></div>
         <MonthSwitch />
       </div>
 

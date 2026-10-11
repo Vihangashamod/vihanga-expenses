@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useEffect } from "react";
-import { LayoutGrid, ArrowLeftRight, Target, PieChart, Settings, Plus } from "lucide-react";
+import { LayoutGrid, ArrowLeftRight, Target, PieChart, Settings, Plus, Wallet, Eye, EyeOff } from "lucide-react";
 import { useStore } from "../data/store";
 import { useUI } from "../data/ui";
 import { Avatar, Logo, SyncDot } from "./bits";
@@ -9,13 +9,21 @@ import { TransactionSheet } from "./TransactionSheet";
 const NAV = [
   { to: "/", label: "Overview", icon: LayoutGrid },
   { to: "/transactions", label: "Transactions", icon: ArrowLeftRight },
+  { to: "/accounts", label: "Accounts", icon: Wallet },
   { to: "/budgets", label: "Budgets", icon: Target },
   { to: "/insights", label: "Insights", icon: PieChart },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function Shell() {
-  const { user, error, legacy, importLegacy, dismissLegacy, demo } = useStore();
+  const { user, error, legacy, importLegacy, dismissLegacy, demo, settings, saveSettings } = useStore();
+  const togglePrivacy = () => void saveSettings({ privacy: !settings.privacy });
+  const PrivacyBtn = () => (
+    <button className="icon-btn plain" onClick={togglePrivacy} aria-pressed={settings.privacy}
+      aria-label={settings.privacy ? "Show amounts" : "Hide amounts"} title={settings.privacy ? "Show amounts" : "Hide amounts"}>
+      {settings.privacy ? <EyeOff /> : <Eye />}
+    </button>
+  );
   const { openSheet, toast, dismissToast, notify } = useUI();
   const loc = useLocation();
 
@@ -26,6 +34,7 @@ export function Shell() {
       if (el.closest("input, textarea, select, [role=dialog]") || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "n") { e.preventDefault(); openSheet(); }
       if (e.key === "i") { e.preventDefault(); openSheet({ type: "income" }); }
+      if (e.key === "t") { e.preventDefault(); openSheet({ type: "transfer" }); }
     };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
@@ -36,7 +45,7 @@ export function Shell() {
   return (
     <div className="shell">
       <aside className="sidebar" aria-label="Main">
-        <div className="brand"><Logo /><span>Vihanga's Expenses<small>Personal finance · LKR</small></span></div>
+        <div className="brand"><Logo /><span>Vihanga's Expenses<small>Personal finance · {settings.currency}</small></span></div>
         <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           {NAV.map(({ to, label, icon: Icon }) => (
             <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
@@ -46,7 +55,7 @@ export function Shell() {
         </nav>
         <button className="btn block add-btn" onClick={() => openSheet()} title="Shortcut: N"><Plus /> Add transaction</button>
         <div className="sidebar-foot">
-          <SyncDot />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><SyncDot /><PrivacyBtn /></div>
           <NavLink to="/settings" className="me">
             <Avatar />
             <div><b>{user?.name}</b><small>{user?.email}</small></div>
@@ -56,7 +65,7 @@ export function Shell() {
 
       <header className="topbar">
         <div className="brand"><Logo size={16} /><span>{title}</span></div>
-        <SyncDot />
+        <PrivacyBtn />
         <NavLink to="/settings" aria-label="Settings"><Avatar /></NavLink>
       </header>
 
@@ -84,7 +93,7 @@ export function Shell() {
           <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => `tab ${isActive ? "active" : ""}`}><Icon />{label}</NavLink>
         ))}
         <div className="tab-fab"><button onClick={() => openSheet()} aria-label="Add transaction"><Plus /></button></div>
-        {NAV.slice(2, 4).map(({ to, label, icon: Icon }) => (
+        {[NAV[3], NAV[4]].map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} className={({ isActive }) => `tab ${isActive ? "active" : ""}`}><Icon />{label}</NavLink>
         ))}
       </nav>

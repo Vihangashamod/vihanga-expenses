@@ -1,8 +1,10 @@
-export type TxType = "expense" | "income";
+export type TxType = "expense" | "income" | "transfer";
+export type CatType = "expense" | "income";
 
 export interface Transaction {
   id: string;
   type: TxType;
+  /** Amount in the base currency. All totals and charts use this. */
   amount: number;
   categoryId: string;
   note: string;
@@ -10,11 +12,20 @@ export interface Transaction {
   date: string;
   createdAt: number;
   recurringId?: string;
+  /** Account money came from (expense, transfer) or went into (income) */
+  accountId?: string;
+  /** Destination account for transfers */
+  toAccountId?: string;
+  /** Set when entered in another currency */
+  originalCurrency?: string;
+  originalAmount?: number;
+  /** Base units per 1 unit of originalCurrency at the time */
+  rate?: number;
 }
 
 export interface Recurring {
   id: string;
-  type: TxType;
+  type: CatType;
   amount: number;
   categoryId: string;
   note: string;
@@ -23,18 +34,76 @@ export interface Recurring {
   active: boolean;
   /** Last month posted, YYYY-MM */
   lastPosted?: string;
+  accountId?: string;
   createdAt: number;
+}
+
+export type AccountKind = "cash" | "bank" | "card" | "wallet" | "savings" | "loan";
+
+export interface Account {
+  id: string;
+  name: string;
+  kind: AccountKind;
+  color: string;
+  openingBalance: number;
+  archived?: boolean;
+  createdAt: number;
+}
+
+export interface CustomCategory {
+  id: string;
+  name: string;
+  type: CatType;
+  icon: string;
+  color: string;
 }
 
 export interface Settings {
   displayName?: string;
-  /** Overall spending limit per month */
   monthlyBudget?: number;
-  /** Per-category monthly limits */
   budgets: Record<string, number>;
+  /** Base currency, every amount is stored in this */
   currency: string;
-  /** Set once the old v1 data has been imported */
+  accounts: Account[];
+  defaultAccountId?: string;
+  customCategories: CustomCategory[];
+  hiddenCategories: string[];
+  showCents: boolean;
+  /** Mask every amount on screen */
+  privacy: boolean;
+  /** First day of the week for weekday charts: 0 = Sunday, 1 = Monday */
+  weekStart: 0 | 1;
+  /** Currencies offered first in the entry sheet */
+  favoriteCurrencies: string[];
   legacyImported?: boolean;
 }
 
-export const DEFAULT_SETTINGS: Settings = { budgets: {}, currency: "LKR" };
+export const DEFAULT_ACCOUNTS: Account[] = [
+  { id: "cash", name: "Cash", kind: "cash", color: "#2F9E6B", openingBalance: 0, createdAt: 0 },
+  { id: "bank", name: "Bank account", kind: "bank", color: "#4C6EDB", openingBalance: 0, createdAt: 1 },
+];
+
+export const DEFAULT_SETTINGS: Settings = {
+  budgets: {},
+  currency: "LKR",
+  accounts: DEFAULT_ACCOUNTS,
+  defaultAccountId: "cash",
+  customCategories: [],
+  hiddenCategories: [],
+  showCents: false,
+  privacy: false,
+  weekStart: 1,
+  favoriteCurrencies: ["USD", "EUR", "GBP"],
+};
+
+export function withDefaults(data: Partial<Settings>): Settings {
+  return {
+    ...DEFAULT_SETTINGS,
+    ...data,
+    budgets: data.budgets ?? {},
+    accounts: data.accounts?.length ? data.accounts : DEFAULT_ACCOUNTS,
+    customCategories: data.customCategories ?? [],
+    hiddenCategories: data.hiddenCategories ?? [],
+    favoriteCurrencies: data.favoriteCurrencies ?? DEFAULT_SETTINGS.favoriteCurrencies,
+  };
+}
