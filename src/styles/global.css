@@ -499,3 +499,14 @@ a { color: inherit; }
 .how code { font-family: var(--f-mono); font-size: 12.5px; background: var(--surface-2); padding: 1px 6px; border-radius: 6px; overflow-wrap: anywhere; }
 .fx-inline { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin-top: 4px; font-size: 11.5px; color: var(--muted); font-weight: 400; white-space: nowrap; }
 .fx-inline input { width: 72px; height: 24px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-2); padding: 0 6px; font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+.card-mini { display: flex; flex-direction: column; gap: 6px; }
+.card-mini small { color: var(--muted); font-size: 12.5px; }
+.card-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.card-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.card-row:first-child { padding-top: 0; }
+.card-row .n b { display: block; font-weight: 500; }
+.card-row .n small { color: var(--muted); font-size: 12.5px; }
+.card-row .bar { grid-column: 2 / -1; }
+.card-row .foot { grid-column: 2 / -1; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
+.cat-line .n { white-space: normal; }
+.cat-line .n small { white-space: normal; }

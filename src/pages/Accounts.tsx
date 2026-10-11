@@ -1,39 +1,62 @@
 import { useMemo, useState } from "react";
-import { ArrowLeftRight, Plus, Star, Archive, ArchiveRestore, Trash2, Wallet } from "lucide-react";
+import { ArrowLeftRight, Plus, Star, Archive, ArchiveRestore, Trash2, Wallet, CreditCard } from "lucide-react";
+import { cardStatus } from "../lib/cards";
 import { useStore, newId } from "../data/store";
 import { useUI } from "../data/ui";
 import { accountOf, balances } from "../lib/analytics";
 import { PALETTE } from "../lib/categories";
-import { currencySymbol, money, parseAmount } from "../lib/format";
+import { currencySymbol, money, parseAmount, shortDate } from "../lib/format";
 import type { Account, AccountKind } from "../lib/types";
 import { ACCOUNT_KINDS, AccountIcon } from "../components/AccountIcon";
 import { TxRow, sortTx } from "../components/TxList";
 
-function AccountForm({ initial, onSave, onCancel, extra }: {
-  initial?: Account; onSave: (a: Account) => void; onCancel: () => void; extra?: React.ReactNode;
+function AccountForm({ initial, startKind, onSave, onCancel, extra }: {
+  initial?: Account; startKind?: AccountKind; onSave: (a: Account) => void; onCancel: () => void; extra?: React.ReactNode;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
-  const [kind, setKind] = useState<AccountKind>(initial?.kind ?? "bank");
-  const [color, setColor] = useState(initial?.color ?? PALETTE[1]);
-  const [opening, setOpening] = useState(initial ? String(initial.openingBalance) : "");
+  const [kind, setKind] = useState<AccountKind>(initial?.kind ?? startKind ?? "bank");
+  const [color, setColor] = useState(initial?.color ?? (startKind === "card" ? PALETTE[7] : PALETTE[1]));
+  const isDebt = kind === "card" || kind === "loan";
+  // Cards and loans: you type what you owe as a positive number; it's stored as a negative balance.
+  const [opening, setOpening] = useState(initial ? String(isDebt || initial.kind === "card" || initial.kind === "loan" ? Math.abs(initial.openingBalance) : initial.openingBalance) : "");
+  const [limit, setLimit] = useState(initial?.creditLimit ? String(initial.creditLimit) : "");
+  const [dueDay, setDueDay] = useState(initial?.dueDay ? String(initial.dueDay) : "");
   const [digits, setDigits] = useState(initial?.smsDigits ?? "");
   const [err, setErr] = useState("");
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return setErr("Give the account a name, like “Sampath Bank” or “eZ Cash”.");
-    const ob = opening.trim() ? parseAmount(opening.replace(/^−/, "-")) : 0;
-    if (Number.isNaN(ob)) return setErr("Enter the starting balance as a number. Use a minus sign for money you owe.");
-    onSave({ id: initial?.id ?? newId(), name: name.trim(), kind, color, openingBalance: ob, smsDigits: digits.trim() || undefined, archived: initial?.archived, createdAt: initial?.createdAt ?? Date.now() });
+    const raw = opening.trim() ? parseAmount(opening.replace(/^−/, "-")) : 0;
+    if (Number.isNaN(raw)) return setErr(isDebt ? "Enter what you owe as a number, or 0." : "Enter the starting balance as a number.");
+    const ob = isDebt ? -Math.abs(raw) : raw;
+    const lim = limit.trim() ? parseAmount(limit) : undefined;
+    if (lim != null && !(lim > 0)) return setErr("Enter the credit limit as a number above zero, or leave it empty.");
+    onSave({
+      id: initial?.id ?? newId(), name: name.trim(), kind, color, openingBalance: ob, smsDigits: digits.trim() || undefined,
+      ...(kind === "card" ? { creditLimit: lim, dueDay: dueDay ? Number(dueDay) : undefined } : {}),
+      archived: initial?.archived, createdAt: initial?.createdAt ?? Date.now(),
+    });
   };
   return (
     <form className="panel" onSubmit={submit} noValidate>
       <div className="form-row">
-        <div><label className="label" htmlFor="a-name">Name</label><input id="a-name" className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Sampath Bank" maxLength={40} autoFocus /></div>
-        <div><label className="label" htmlFor="a-open">Starting balance ({currencySymbol()})</label>
+        <div><label className="label" htmlFor="a-name">Name</label><input id="a-name" className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={kind === "card" ? "e.g. HNB Visa" : "e.g. Sampath Bank"} maxLength={40} autoFocus /></div>
+        <div><label className="label" htmlFor="a-open">{isDebt ? `Owed right now (${currencySymbol()})` : `Balance right now (${currencySymbol()})`}</label>
           <input id="a-open" className="input num" inputMode="decimal" value={opening} onChange={(e) => setOpening(e.target.value.replace(/[^\d.,\-−]/g, ""))} placeholder="0" /></div>
       </div>
+      {kind === "card" && (
+        <div className="form-row">
+          <div><label className="label" htmlFor="a-limit">Credit limit ({currencySymbol()}, optional)</label>
+            <input id="a-limit" className="input num" inputMode="decimal" value={limit} onChange={(e) => setLimit(e.target.value.replace(/[^\d.,]/g, ""))} placeholder="e.g. 200000" /></div>
+          <div><label className="label" htmlFor="a-due">Payment due on (optional)</label>
+            <select id="a-due" className="select" value={dueDay} onChange={(e) => setDueDay(e.target.value)}>
+              <option value="">No reminder</option>
+              {Array.from({ length: 28 }, (_, i) => <option key={i + 1} value={i + 1}>Day {i + 1} of each month</option>)}
+            </select></div>
+        </div>
+      )}
       <div>
-        <label className="label" htmlFor="a-digits">Last 4 digits of the account or card (optional)</label>
+        <label className="label" htmlFor="a-digits">Last 4 digits of the {kind === "card" ? "card" : "account"} (optional)</label>
         <input id="a-digits" className="input num" inputMode="numeric" maxLength={6} style={{ maxWidth: 180 }} value={digits}
           onChange={(e) => setDigits(e.target.value.replace(/\D/g, ""))} placeholder="e.g. 6576" />
         <small style={{ display: "block", color: "var(--muted)", fontSize: 12.5, marginTop: 4 }}>Bank SMS alerts with these digits are added to this account.</small>
@@ -54,7 +77,6 @@ function AccountForm({ initial, onSave, onCancel, extra }: {
           {PALETTE.map((c) => <button type="button" key={c} role="radio" aria-checked={color === c} aria-label={c} className="swatch" style={{ background: c }} onClick={() => setColor(c)} />)}
         </div>
       </div>
-      <small style={{ color: "var(--muted)", fontSize: 12.5 }}>For a credit card or loan, enter what you owe as a negative number.</small>
       {err && <p className="form-error" style={{ margin: 0 }}>{err}</p>}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button className="btn" type="submit">{initial ? "Save account" : "Add account"}</button>
@@ -68,7 +90,7 @@ function AccountForm({ initial, onSave, onCancel, extra }: {
 export default function Accounts() {
   const { settings, saveSettings, transactions } = useStore();
   const { openSheet, notify } = useUI();
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState<false | AccountKind>(() => (location.hash === "#add-card" ? "card" : false));
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
@@ -99,6 +121,15 @@ export default function Accounts() {
           <span style={{ minWidth: 0 }}><b>{a.name}</b><small>{ACCOUNT_KINDS.find((k) => k.id === a.kind)?.label}{settings.defaultAccountId === a.id ? " · Default" : ""}{a.archived ? " · Archived" : ""}</small></span>
         </span>
         <span className={`acct-bal ${b < 0 ? "neg" : ""}`}>{money(b)}</span>
+        {a.kind === "card" && (() => {
+          const cs = cardStatus(a, b);
+          return (
+            <span className="card-mini">
+              {cs.limit != null && <span className="bar"><i style={{ width: `${(cs.used ?? 0) * 100}%`, background: (cs.used ?? 0) > 0.8 ? "var(--neg)" : a.color }} /></span>}
+              <small>{cs.limit != null ? `${money(cs.available ?? 0)} available of ${money(cs.limit)}` : cs.owed ? `${money(cs.owed)} to pay` : "Nothing owed"}{cs.due && cs.owed > 0 ? ` · due ${shortDate(cs.due)}` : ""}</small>
+            </span>
+          );
+        })()}
       </button>
     );
   };
@@ -109,7 +140,8 @@ export default function Accounts() {
         <div><h1>Accounts</h1><p>Where your money is: cash, bank, cards and wallets.</p></div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {active.length > 1 && <button className="btn secondary" onClick={() => openSheet({ type: "transfer" })}><ArrowLeftRight />Transfer</button>}
-          <button className="btn" onClick={() => { setAdding(true); setSelected(null); }}><Plus />Add account</button>
+          <button className="btn secondary" onClick={() => { setAdding("card"); setSelected(null); }}><CreditCard />Add credit card</button>
+          <button className="btn" onClick={() => { setAdding("bank"); setSelected(null); }}><Plus />Add account</button>
         </div>
       </div>
 
@@ -119,7 +151,7 @@ export default function Accounts() {
         <div className="stat"><dt>You owe</dt><dd style={{ color: debts < 0 ? "var(--neg)" : undefined }}>{money(Math.abs(debts))}</dd></div>
       </dl>
 
-      {adding && <AccountForm onCancel={() => setAdding(false)} onSave={async (a) => { setAdding(false); await upsert(a); setSelected(a.id); }} />}
+      {adding && <AccountForm key={adding} startKind={adding} onCancel={() => setAdding(false)} onSave={async (a) => { setAdding(false); await upsert(a); setSelected(a.id); }} />}
 
       <div className="acct-grid">{active.map((a) => <Card key={a.id} a={a} />)}</div>
 

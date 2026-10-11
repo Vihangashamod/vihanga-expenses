@@ -154,7 +154,7 @@ function CurrencyChange({ to, onDone }: { to: string; onDone: () => void }) {
       </span>
       <div className="fx" style={{ margin: 0, background: "var(--surface)" }}>
         <label htmlFor="cc-rate">1 {from} =</label>
-        <input id="cc-rate" className="input" inputMode="decimal" value={factor} placeholder={state === "loading" ? "Loading…" : "Rate"} onChange={(e) => setFactor(e.target.value.replace(/[^\d.,]/g, ""))} />
+        <input id="cc-rate" className="input" onFocus={(e) => e.currentTarget.select()} inputMode="decimal" value={factor} placeholder={state === "loading" ? "Loading…" : "Rate"} onChange={(e) => setFactor(e.target.value.replace(/[^\d.,]/g, ""))} />
         <span>{to}</span>
         <small>{state === "loading" ? "Getting today's rate…" : state === "failed" ? "Couldn't get a live rate. Type it in." : "Today's rate. You can change it."}{f > 0 && <> · e.g. {money(10000, { currency: from, reveal: true })} becomes {money(10000 * f, { currency: to, reveal: true })}</>}</small>
       </div>

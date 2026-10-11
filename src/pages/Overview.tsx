@@ -1,10 +1,11 @@
 import { Link } from "react-router-dom";
-import { ArrowDownLeft, ArrowUpRight, CalendarClock, Wallet, Gauge, Plus, Receipt, PiggyBank, Repeat2 } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, CalendarClock, Wallet, Gauge, Plus, Receipt, PiggyBank, Repeat2, CreditCard } from "lucide-react";
+import { cardStatus } from "../lib/cards";
 import { useStore } from "../data/store";
 import { useUI } from "../data/ui";
 import { balances, cumulative, inMonth, leftover, summarize } from "../lib/analytics";
 import { AccountIcon } from "../components/AccountIcon";
-import { currencySymbol, dayLabel, isPrivate, money, monthKey, monthLabel, shiftMonth, todayISO } from "../lib/format";
+import { currencySymbol, dayLabel, isPrivate, money, monthKey, monthLabel, shiftMonth, shortDate, todayISO } from "../lib/format";
 import { currentPeriodKey, daysBetween, rangeLabel } from "../lib/period";
 import { getCategory } from "../lib/categories";
 import { CatTile, MonthSwitch } from "../components/bits";
@@ -63,15 +64,19 @@ export default function Overview() {
         return null;
       }).filter((x): x is { r: typeof recurring[number]; date: string } => !!x).sort((a, b) => a.date.localeCompare(b.date))
     : [];
+  const bal = balances(settings.accounts, transactions, settings.defaultAccountId);
   const cards = settings.accounts.filter((a) => a.kind === "card" && !a.archived);
   const payFrom = settings.accounts.find((a) => a.kind === "bank" && !a.archived)?.id ?? settings.defaultAccountId;
   const monthTx = inMonth(transactions, month);
+  const cardSpent = (id: string) => monthTx.filter((t) => t.type === "expense" && t.accountId === id).reduce((x, t) => x + t.amount, 0);
+  // Card bills due in the next 10 days show under "Coming up".
+  const cardDues = isNow ? cards.map((c) => ({ c, cs: cardStatus(c, bal.get(c.id) ?? 0) }))
+    .filter(({ cs }) => cs.owed > 0 && cs.due && (cs.daysToDue ?? 99) <= 10) : [];
   const alerts = Object.entries(settings.budgets)
     .map(([id, limit]) => ({ id, limit, spent: s.byCategory.find((c) => c.id === id)?.total ?? 0 }))
     .filter((b) => b.limit > 0 && b.spent / b.limit >= 0.8)
     .sort((a, b) => b.spent / b.limit - a.spent / a.limit);
 
-  const bal = balances(settings.accounts, transactions, settings.defaultAccountId);
   const netWorth = [...bal.values()].reduce((a, b) => a + b, 0);
   const firstName = (settings.displayName || user?.name || "").split(" ")[0];
 
@@ -139,30 +144,49 @@ export default function Overview() {
         </section>
       )}
 
-      {(cards.length > 0 || settings.leftover !== "none" || lo.rows.length > 0) && (
-        <div className={cards.length ? "grid-2 even" : ""}>
-          {cards.length > 0 && (
-            <section className="card">
-              <div className="card-head"><h2>Credit cards</h2><span className="meta">Spent on cards: <b className="num" style={{ color: "var(--ink)" }}>{money(cards.reduce((a, c) => a + monthTx.filter((t) => t.type === "expense" && t.accountId === c.id).reduce((x, t) => x + t.amount, 0), 0))}</b></span></div>
-              <div className="stack">
+      {(
+        <div className="grid-2 even">
+          <section className="card">
+            <div className="card-head">
+              <h2>Credit cards</h2>
+              {cards.length > 0
+                ? <span className="meta">On cards this month: <b className="num" style={{ color: "var(--ink)" }}>{money(cards.reduce((a, c) => a + cardSpent(c.id), 0))}</b></span>
+                : <Link className="more" to="/accounts#add-card">Add card</Link>}
+            </div>
+            {cards.length === 0 ? (
+              <div className="empty" style={{ padding: "12px 0" }}>
+                <CreditCard /><b>Track your credit card</b>
+                <span>See what you've put on the card, what you owe, how much limit is left and when the bill is due.</span>
+                <Link className="btn sm" to="/accounts#add-card" style={{ marginTop: 6 }}><Plus />Add credit card</Link>
+              </div>
+            ) : (
+              <div>
                 {cards.map((c) => {
-                  const owed = Math.max(-(bal.get(c.id) ?? 0), 0);
-                  const spent = monthTx.filter((t) => t.type === "expense" && t.accountId === c.id).reduce((x, t) => x + t.amount, 0);
+                  const cs = cardStatus(c, bal.get(c.id) ?? 0);
+                  const spent = cardSpent(c.id);
                   const paid = monthTx.filter((t) => t.type === "transfer" && t.toAccountId === c.id).reduce((x, t) => x + t.amount, 0);
+                  const soon = cs.owed > 0 && cs.daysToDue != null && cs.daysToDue <= 5;
                   return (
-                    <div className="cat-line" key={c.id}>
+                    <div className="card-row" key={c.id}>
                       <AccountIcon kind={c.kind} color={c.color} tile />
-                      <span className="n">{c.name}<small>{money(spent)} spent{paid ? ` · ${money(paid)} paid` : ""} this month</small></span>
+                      <span className="n"><b>{c.name}</b><small>{money(spent)} spent{paid ? ` · ${money(paid)} paid` : ""} this month</small></span>
                       <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <span className="v">{owed ? money(owed) : "Nothing"}<small>{owed ? "to pay" : "owed"}</small></span>
-                        {owed > 0 && <button className="btn secondary sm" onClick={() => openSheet({ type: "transfer", preset: { accountId: payFrom, toAccountId: c.id, amount: owed, note: `${c.name} payment` } })}>Pay</button>}
+                        <span className="v" style={{ textAlign: "right" }}><b className="num" style={{ fontWeight: 600 }}>{cs.owed ? money(cs.owed) : "Nothing"}</b><small style={{ display: "block", color: "var(--muted)", fontSize: 12.5 }}>{cs.owed ? "to pay" : "owed"}</small></span>
+                        {cs.owed > 0 && <button className="btn secondary sm" onClick={() => openSheet({ type: "transfer", preset: { accountId: payFrom, toAccountId: c.id, amount: cs.owed, note: `${c.name} payment` } })}>Pay</button>}
                       </span>
+                      {cs.limit != null && <span className="bar"><i style={{ width: `${(cs.used ?? 0) * 100}%`, background: (cs.used ?? 0) > 0.8 ? "var(--neg)" : (cs.used ?? 0) > 0.5 ? "var(--warn)" : c.color }} /></span>}
+                      {(cs.limit != null || cs.due) && (
+                        <span className="foot">
+                          <span>{cs.limit != null ? `${Math.round((cs.used ?? 0) * 100)}% of ${money(cs.limit)} limit · ${money(cs.available ?? 0)} available` : ""}</span>
+                          {cs.due && cs.owed > 0 && <span className={soon ? "chip warn" : ""}>{cs.daysToDue === 0 ? "Due today" : `Due ${shortDate(cs.due)} · ${cs.daysToDue} day${cs.daysToDue === 1 ? "" : "s"}`}</span>}
+                        </span>
+                      )}
                     </div>
                   );
                 })}
               </div>
-            </section>
-          )}
+            )}
+          </section>
           <LeftoverCard rows={lo.rows} mode={settings.leftover} saved={lo.saved} thisLeft={left} isNow={isNow} />
         </div>
       )}
@@ -221,10 +245,17 @@ export default function Overview() {
 
         <section className="card">
           <div className="card-head"><h2>Coming up</h2><Link className="more" to="/settings#recurring">Manage</Link></div>
-          {upcoming.length === 0 && alerts.length === 0 ? (
+          {upcoming.length === 0 && alerts.length === 0 && cardDues.length === 0 ? (
             <div className="empty"><CalendarClock /><b>All clear</b>No bills due later this month and every budget has room.</div>
           ) : (
             <div className="stack">
+              {cardDues.map(({ c, cs }) => (
+                <div className="cat-line" key={`card-${c.id}`}>
+                  <AccountIcon kind={c.kind} color={c.color} tile />
+                  <span className="n">{c.name} bill<small>Due {dayLabel(cs.due!)} · {cs.daysToDue === 0 ? "today" : `in ${cs.daysToDue} day${cs.daysToDue === 1 ? "" : "s"}`}</small></span>
+                  <button className="btn secondary sm" onClick={() => openSheet({ type: "transfer", preset: { accountId: payFrom, toAccountId: c.id, amount: cs.owed, note: `${c.name} payment` } })}>Pay {money(cs.owed)}</button>
+                </div>
+              ))}
               {upcoming.map(({ r, date }) => {
                 const inDays = daysBetween(todayIso, date);
                 return (

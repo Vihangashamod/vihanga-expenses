@@ -50,6 +50,10 @@ export interface Account {
   openingBalance: number;
   /** Last digits of the account or card number, used to match bank SMS alerts */
   smsDigits?: string;
+  /** Credit cards: spending limit */
+  creditLimit?: number;
+  /** Credit cards: day of the month the bill must be paid (1–28) */
+  dueDay?: number;
   archived?: boolean;
   createdAt: number;
 }

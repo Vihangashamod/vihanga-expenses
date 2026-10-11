@@ -61,7 +61,7 @@ export function demoData(): { transactions: Transaction[]; recurring: Recurring[
     accounts: [
       { id: "cash", name: "Cash", kind: "cash", color: "#2F9E6B", openingBalance: 8500, createdAt: 0 },
       { id: "bank", name: "Commercial Bank", kind: "bank", color: "#4C6EDB", openingBalance: 240000, createdAt: 1 },
-      { id: "card", name: "Visa card", kind: "card", color: "#D24C8F", openingBalance: -18000, createdAt: 2 },
+      { id: "card", name: "HNB Visa", kind: "card", color: "#D24C8F", openingBalance: -18000, creditLimit: 150000, dueDay: 15, smsDigits: "4321", createdAt: 2 },
       { id: "savings", name: "Savings (FD)", kind: "savings", color: "#E0A11B", openingBalance: 350000, createdAt: 3 },
     ],
     defaultAccountId: "cash",

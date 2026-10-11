@@ -169,7 +169,7 @@ function SheetBody({ tx, initialType, preset, onClose }: { tx?: Transaction; ini
             </select>
           ) : <span>{getCurrency(base).symbol}</span>}
           <input
-            id="tx-amount" ref={amountRef} inputMode="decimal" autoComplete="off" placeholder="0" aria-label={`Amount in ${currency}`}
+            id="tx-amount" ref={amountRef} onFocus={(e) => e.currentTarget.select()} inputMode="decimal" autoComplete="off" placeholder="0" aria-label={`Amount in ${currency}`}
             value={amount} style={{ width: `${Math.max(amount.length, 1) + 0.6}ch` }}
             onChange={(e) => { setAmount(e.target.value.replace(/[^\d.,]/g, "")); setErr(""); }}
           />

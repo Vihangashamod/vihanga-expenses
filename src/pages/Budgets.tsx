@@ -18,7 +18,7 @@ function AmountEditor({ value, onSave, onCancel, label }: { value?: number; onSa
   const [v, setV] = useState(value ? String(value) : "");
   return (
     <form className="budget-edit" onSubmit={(e) => { e.preventDefault(); const n = parseAmount(v); if (n >= 0) onSave(n); }}>
-      <input className="input" autoFocus inputMode="decimal" aria-label={label} placeholder={currencySymbol()} value={v}
+      <input className="input" autoFocus onFocus={(e) => e.currentTarget.select()} inputMode="decimal" aria-label={label} placeholder={currencySymbol()} value={v}
         onChange={(e) => setV(e.target.value.replace(/[^\d.,]/g, ""))} onKeyDown={(e) => e.key === "Escape" && onCancel()} />
       <button className="icon-btn" type="submit" aria-label="Save"><Check /></button>
       <button className="icon-btn plain" type="button" onClick={onCancel} aria-label="Cancel"><X /></button>
