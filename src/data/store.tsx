@@ -220,7 +220,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await guard(async () => {
       const ref = doc(db, ...userPath("meta", "settings"));
       // Maps are replaced as a whole so removed keys (a budget, a month's dates) really disappear.
-      const mapKeys = (["budgets", "periods"] as const).filter((k) => patch[k] !== undefined);
+      const mapKeys = (["budgets", "periods", "merchantRules"] as const).filter((k) => patch[k] !== undefined);
       if (mapKeys.length) {
         const rest: Partial<Settings> = { ...patch };
         mapKeys.forEach((k) => delete rest[k]);

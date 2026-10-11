@@ -16,13 +16,14 @@ function AccountForm({ initial, onSave, onCancel, extra }: {
   const [kind, setKind] = useState<AccountKind>(initial?.kind ?? "bank");
   const [color, setColor] = useState(initial?.color ?? PALETTE[1]);
   const [opening, setOpening] = useState(initial ? String(initial.openingBalance) : "");
+  const [digits, setDigits] = useState(initial?.smsDigits ?? "");
   const [err, setErr] = useState("");
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return setErr("Give the account a name, like “Sampath Bank” or “eZ Cash”.");
     const ob = opening.trim() ? parseAmount(opening.replace(/^−/, "-")) : 0;
     if (Number.isNaN(ob)) return setErr("Enter the starting balance as a number. Use a minus sign for money you owe.");
-    onSave({ id: initial?.id ?? newId(), name: name.trim(), kind, color, openingBalance: ob, archived: initial?.archived, createdAt: initial?.createdAt ?? Date.now() });
+    onSave({ id: initial?.id ?? newId(), name: name.trim(), kind, color, openingBalance: ob, smsDigits: digits.trim() || undefined, archived: initial?.archived, createdAt: initial?.createdAt ?? Date.now() });
   };
   return (
     <form className="panel" onSubmit={submit} noValidate>
@@ -30,6 +31,12 @@ function AccountForm({ initial, onSave, onCancel, extra }: {
         <div><label className="label" htmlFor="a-name">Name</label><input id="a-name" className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Sampath Bank" maxLength={40} autoFocus /></div>
         <div><label className="label" htmlFor="a-open">Starting balance ({currencySymbol()})</label>
           <input id="a-open" className="input num" inputMode="decimal" value={opening} onChange={(e) => setOpening(e.target.value.replace(/[^\d.,\-−]/g, ""))} placeholder="0" /></div>
+      </div>
+      <div>
+        <label className="label" htmlFor="a-digits">Last 4 digits of the account or card (optional)</label>
+        <input id="a-digits" className="input num" inputMode="numeric" maxLength={6} style={{ maxWidth: 180 }} value={digits}
+          onChange={(e) => setDigits(e.target.value.replace(/\D/g, ""))} placeholder="e.g. 6576" />
+        <small style={{ display: "block", color: "var(--muted)", fontSize: 12.5, marginTop: 4 }}>Bank SMS alerts with these digits are added to this account.</small>
       </div>
       <div>
         <span className="label">Type</span>

@@ -9,6 +9,7 @@ import Accounts from "./pages/Accounts";
 import Insights from "./pages/Insights";
 import Settings from "./pages/Settings";
 import SignIn from "./pages/SignIn";
+import Import from "./pages/Import";
 
 function Gate() {
   const { status } = useStore();
@@ -23,6 +24,7 @@ function Gate() {
         <Route path="budgets" element={<Budgets />} />
         <Route path="insights" element={<Insights />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="import" element={<Import />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

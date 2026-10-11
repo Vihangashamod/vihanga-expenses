@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useEffect } from "react";
-import { LayoutGrid, ArrowLeftRight, Target, PieChart, Settings, Plus, Wallet, Eye, EyeOff } from "lucide-react";
+import { LayoutGrid, ArrowLeftRight, Target, PieChart, Settings, Plus, Wallet, Eye, EyeOff, MessageSquareText } from "lucide-react";
 import { useStore } from "../data/store";
 import { useUI } from "../data/ui";
 import { Avatar, Logo, SyncDot } from "./bits";
@@ -40,7 +40,7 @@ export function Shell() {
     return () => removeEventListener("keydown", onKey);
   }, [openSheet]);
 
-  const title = NAV.find((n) => (n.to === "/" ? loc.pathname === "/" : loc.pathname.startsWith(n.to)))?.label ?? "Expenses";
+  const title = loc.pathname.startsWith("/import") ? "Import SMS" : NAV.find((n) => (n.to === "/" ? loc.pathname === "/" : loc.pathname.startsWith(n.to)))?.label ?? "Expenses";
 
   return (
     <div className="shell">
@@ -54,6 +54,7 @@ export function Shell() {
           ))}
         </nav>
         <button className="btn block add-btn" onClick={() => openSheet()} title="Shortcut: N"><Plus /> Add transaction</button>
+        <NavLink to="/import" className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}><MessageSquareText /> Import SMS</NavLink>
         <div className="sidebar-foot">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><SyncDot /><PrivacyBtn /></div>
           <NavLink to="/settings" className="me">

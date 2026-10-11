@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Pause, Play, Trash2, Plus, LogOut, Download, Upload, Monitor, Sun, Moon, Eye, EyeOff, Pencil } from "lucide-react";
 import { useStore, newId, type Backup } from "../data/store";
 import { useUI, type Theme } from "../data/ui";
@@ -413,6 +413,10 @@ export default function Settings() {
       <section className="card" id="data">
         <div className="card-head"><h2>Your data</h2><span className="meta">{transactions.length} transactions</span></div>
         <div className="settings-list">
+          <div className="set-row">
+            <span className="t"><b>Import bank SMS alerts</b><small>Paste HNB or other bank alerts, or send them automatically from your iPhone.</small></span>
+            <Link className="btn secondary sm" to="/import">Open import</Link>
+          </div>
           <div className="set-row">
             <span className="t"><b>Export to a spreadsheet</b><small>Every transaction as CSV, for Excel or Google Sheets.</small></span>
             <button className="btn secondary sm" disabled={!transactions.length} onClick={() => downloadCSV("vihanga-expenses-all.csv", toCSV(transactions, settings.accounts, settings.currency))}><Download />Export CSV</button>

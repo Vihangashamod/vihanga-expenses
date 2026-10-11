@@ -470,3 +470,30 @@ a { color: inherit; }
 .month-label small:empty { display: none; }
 .month-switch .dates-btn { border-left: 1px solid var(--line); border-radius: 0 9px 9px 0; margin-left: 2px; color: var(--muted); }
 .month-switch .dates-btn.on { color: var(--accent); }
+
+/* ---------- SMS import ---------- */
+.sms-area { height: auto; min-height: 130px; padding: 12px 14px; resize: vertical; font-family: var(--f-mono); font-size: 13px; line-height: 1.5; }
+.import-list { display: flex; flex-direction: column; }
+.import-row { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.import-row:last-child { border-bottom: 0; }
+.import-row.off { opacity: 0.5; }
+.import-row .check { width: 24px; height: 24px; margin-top: 8px; border-radius: 7px; border: 1.5px solid var(--faint); background: var(--surface); display: grid; place-items: center; color: var(--accent-ink); padding: 0; }
+.import-row .check[aria-checked="true"] { background: var(--accent); border-color: var(--accent); }
+.import-row .check svg { width: 15px; height: 15px; }
+.import-row .cat-tile { margin-top: 2px; }
+.import-main { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.import-main .input { height: 38px; }
+.import-meta { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 12.5px; color: var(--muted); }
+.import-row .amt { margin-top: 8px; }
+.mini-select { height: 28px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); font-size: 12.5px; padding: 0 6px; color: var(--ink-2); max-width: 170px; }
+@media (max-width: 560px) {
+  .import-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .import-row .cat-tile { display: none; }
+}
+.how-toggle { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; background: transparent; padding: 0; text-align: left; color: var(--ink); }
+.how-toggle > svg { width: 20px; height: 20px; color: var(--accent); flex: none; }
+.how-toggle span { flex: 1; min-width: 0; }
+.how-toggle b { display: block; font-weight: 600; }
+.how-toggle small { color: var(--muted); font-size: 13px; }
+.how { margin: 14px 0 6px; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; color: var(--ink-2); }
+.how code { font-family: var(--f-mono); font-size: 12.5px; background: var(--surface-2); padding: 1px 6px; border-radius: 6px; overflow-wrap: anywhere; }

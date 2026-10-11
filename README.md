@@ -7,6 +7,8 @@ A personal finance app for tracking spending and income in Sri Lankan rupees. It
 - **Budgets**: one overall monthly limit plus per-category limits, with suggestions from your 3-month average
 - **Insights**: savings rate, category donut, 6-month income vs expenses, biggest changes against last month, spending by weekday
 - **Settings**: recurring items (rent, subscriptions, salary) that post automatically each month, theme, data export
+- **Import SMS**: paste HNB (or other bank) alerts, or send them from an iPhone Shortcut to `/import#sms=…`; amounts, places, dates and accounts are read, categories are guessed and learned, duplicates are skipped
+- **Your own month dates** (e.g. 25 Sep – 24 Oct), leftover money carried over or saved, credit card spending and amounts owed
 - Google sign-in, real-time sync across devices, offline support, light and dark themes, and an installable phone app (Add to Home Screen)
 
 Try it with sample data at https://vihanga-expenses.web.app/?demo. Nothing you do in demo mode is saved.

@@ -21,6 +21,8 @@ export interface Transaction {
   originalAmount?: number;
   /** Base units per 1 unit of originalCurrency at the time */
   rate?: number;
+  /** "sms" when imported from a bank alert */
+  source?: "sms";
 }
 
 export interface Recurring {
@@ -46,6 +48,8 @@ export interface Account {
   kind: AccountKind;
   color: string;
   openingBalance: number;
+  /** Last digits of the account or card number, used to match bank SMS alerts */
+  smsDigits?: string;
   archived?: boolean;
   createdAt: number;
 }
@@ -77,6 +81,8 @@ export interface Settings {
   leftover: "carry" | "save" | "none";
   /** Your own month dates, keyed by month: { "2026-10": { start: "2026-09-25", end: "2026-10-24" } } */
   periods: Record<string, { start: string; end: string }>;
+  /** Categories you picked for places in imported alerts: { "keells super": "groceries" } */
+  merchantRules: Record<string, string>;
   /** Currencies offered first in the entry sheet */
   favoriteCurrencies: string[];
   legacyImported?: boolean;
@@ -100,6 +106,7 @@ export const DEFAULT_SETTINGS: Settings = {
   favoriteCurrencies: ["USD", "EUR", "GBP"],
   periods: {},
   leftover: "carry",
+  merchantRules: {},
 };
 
 export function withDefaults(data: Partial<Settings>): Settings {
@@ -111,6 +118,7 @@ export function withDefaults(data: Partial<Settings>): Settings {
     customCategories: data.customCategories ?? [],
     hiddenCategories: data.hiddenCategories ?? [],
     periods: data.periods ?? {},
+    merchantRules: data.merchantRules ?? {},
     favoriteCurrencies: data.favoriteCurrencies ?? DEFAULT_SETTINGS.favoriteCurrencies,
   };
 }

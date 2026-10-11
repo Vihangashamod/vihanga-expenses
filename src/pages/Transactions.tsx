@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Search, Receipt, Plus, Download } from "lucide-react";
+import { Search, Receipt, Plus, Download, MessageSquareText } from "lucide-react";
+import { Link } from "react-router-dom";
 import { useStore } from "../data/store";
 import { useUI } from "../data/ui";
 import { allOf, getCategory } from "../lib/categories";
@@ -102,6 +103,7 @@ export default function Transactions() {
               </select>
             </>
           )}
+          <Link className="btn secondary" to="/import"><MessageSquareText />Import SMS</Link>
           <button className="btn secondary" onClick={() => downloadCSV(`expenses-${allTime ? "all" : month}.csv`, toCSV(shown, settings.accounts, settings.currency))} disabled={!shown.length}>
             <Download />CSV
           </button>
