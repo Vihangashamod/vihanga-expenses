@@ -52,6 +52,8 @@ const isDemo = () => new URLSearchParams(location.search).has("demo") || session
 function authMessage(code: string, fallback: string) {
   const map: Record<string, string> = {
     "auth/operation-not-allowed": "Google sign-in is turned off for this project. Turn it on in Firebase Console → Authentication → Sign-in method.",
+    "auth/configuration-not-found": "Sign-in isn't set up for this app yet. In Firebase Console, open Authentication, click Get started, and enable Google under Sign-in method.",
+    "auth/popup-blocked": "Your browser blocked the sign-in window. Allow pop-ups for this site and try again.",
     "auth/unauthorized-domain": "This web address isn't allowed to sign in. Add it in Firebase Console → Authentication → Settings → Authorized domains.",
     "auth/popup-closed-by-user": "Sign-in was cancelled.",
     "auth/network-request-failed": "No connection. Check your internet and try again.",
@@ -327,8 +329,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       const code = (e as { code?: string }).code ?? "";
       if (code === "auth/popup-blocked" || code === "auth/operation-not-supported-in-this-environment") {
-        await signInWithRedirect(auth, googleProvider);
-        return;
+        try { await signInWithRedirect(auth, googleProvider); return; }
+        catch (e2) { const c2 = (e2 as { code?: string }).code ?? ""; setError(authMessage(c2, (e2 as Error).message)); return; }
       }
       setError(authMessage(code, (e as Error).message));
     }
