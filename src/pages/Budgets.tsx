@@ -4,6 +4,7 @@ import { useStore } from "../data/store";
 import { useUI } from "../data/ui";
 import { summarize, inMonth, sum } from "../lib/analytics";
 import { allOf, getCategory, isHidden } from "../lib/categories";
+import { periodOf, rangeLabel } from "../lib/period";
 import { currencySymbol, money, monthLabel, parseAmount, shiftMonth } from "../lib/format";
 import { CatTile, MonthSwitch } from "../components/bits";
 
@@ -59,7 +60,7 @@ export default function Budgets() {
   return (
     <div className="page">
       <div className="page-head">
-        <div><h1>Budgets</h1><p>Monthly limits in {settings.currency}, checked against what you've spent in {monthLabel(month)}.</p></div>
+        <div><h1>Budgets</h1><p>Monthly limits in {settings.currency}, checked against what you've spent in {monthLabel(month)}{periodOf(month).custom ? ` (${rangeLabel(periodOf(month))})` : ""}.</p></div>
         <MonthSwitch />
       </div>
 

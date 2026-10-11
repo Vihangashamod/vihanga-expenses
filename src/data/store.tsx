@@ -6,6 +6,7 @@ import {
 import { auth, db, googleProvider } from "../lib/firebase";
 import { DEFAULT_SETTINGS, withDefaults, type Recurring, type Settings, type Transaction } from "../lib/types";
 import { configureMoney, daysInMonth, thisMonth, uid } from "../lib/format";
+import { configurePeriods } from "../lib/period";
 import { LEGACY_CATEGORY_MAP, setCategoryRegistry } from "../lib/categories";
 import { demoData } from "./demo";
 
@@ -218,10 +219,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSettings((s) => ({ ...s, ...patch }));
     await guard(async () => {
       const ref = doc(db, ...userPath("meta", "settings"));
-      if (patch.budgets) {
-        const { budgets, ...rest } = patch;
-        await setDoc(ref, { ...rest }, { merge: true });
-        await setDoc(ref, { budgets }, { mergeFields: ["budgets"] });
+      // Maps are replaced as a whole so removed keys (a budget, a month's dates) really disappear.
+      const mapKeys = (["budgets", "periods"] as const).filter((k) => patch[k] !== undefined);
+      if (mapKeys.length) {
+        const rest: Partial<Settings> = { ...patch };
+        mapKeys.forEach((k) => delete rest[k]);
+        if (Object.keys(rest).length) await setDoc(ref, rest, { merge: true });
+        await setDoc(ref, Object.fromEntries(mapKeys.map((k) => [k, patch[k]])), { mergeFields: [...mapKeys] });
       } else {
         await setDoc(ref, patch, { merge: true });
       }
@@ -345,6 +349,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // Formatting and the category list follow settings; set them before children render.
   configureMoney({ currency: settings.currency, showCents: settings.showCents, privacy: settings.privacy });
   setCategoryRegistry(settings.customCategories, settings.hiddenCategories);
+  configurePeriods(settings.periods);
 
   const value: Store = {
     status, demo, sync, error, transactions, recurring, settings, legacy,

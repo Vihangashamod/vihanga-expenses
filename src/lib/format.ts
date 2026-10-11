@@ -84,3 +84,10 @@ export function parseAmount(s: string): number {
   const n = parseFloat(String(s).replace(/[,\s]/g, ""));
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : NaN;
 }
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "25 Sep", "25 Sep 2026" */
+export function shortDate(iso: string, withYear = false, withMonth = true): string {
+  const d = parseISODate(iso);
+  return `${d.getDate()}${withMonth ? ` ${MONTHS[d.getMonth()]}` : ""}${withYear ? ` ${d.getFullYear()}` : ""}`;
+}

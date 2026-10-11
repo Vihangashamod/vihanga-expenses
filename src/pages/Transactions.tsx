@@ -7,7 +7,8 @@ import { money, monthLabel } from "../lib/format";
 import { MonthSwitch } from "../components/bits";
 import { TxGroups, sortTx } from "../components/TxList";
 import type { Account, Transaction } from "../lib/types";
-import { accountOf } from "../lib/analytics";
+import { accountOf, inMonth } from "../lib/analytics";
+import { periodOf, rangeLabel } from "../lib/period";
 
 type Kind = "all" | "expense" | "income" | "transfer";
 
@@ -40,7 +41,7 @@ export default function Transactions() {
   const [cat, setCat] = useState("all");
   const [allTime, setAllTime] = useState(false);
 
-  const scope = useMemo(() => (allTime ? transactions : transactions.filter((t) => t.date.startsWith(month))), [transactions, month, allTime]);
+  const scope = useMemo(() => (allTime ? transactions : inMonth(transactions, month)), [transactions, month, allTime, settings.periods]);
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return scope.filter((t) =>
@@ -58,7 +59,7 @@ export default function Transactions() {
   return (
     <div className="page">
       <div className="page-head">
-        <div><h1>Transactions</h1><p>{allTime ? "Everything you've recorded." : `Everything in ${monthLabel(month)}.`}</p></div>
+        <div><h1>Transactions</h1><p>{allTime ? "Everything you've recorded." : `Everything in ${monthLabel(month)}${periodOf(month).custom ? ` (${rangeLabel(periodOf(month))})` : ""}.`}</p></div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {!allTime && <MonthSwitch />}
           <div className="seg" role="group" aria-label="Range">

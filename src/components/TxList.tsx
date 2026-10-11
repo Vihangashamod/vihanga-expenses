@@ -1,4 +1,4 @@
-import { Repeat, Globe } from "lucide-react";
+import { Repeat, Globe, CreditCard } from "lucide-react";
 import type { Transaction } from "../lib/types";
 import { getCategory } from "../lib/categories";
 import { dayLabel, money } from "../lib/format";
@@ -17,6 +17,8 @@ export function TxRow({ t, showDate }: { t: Transaction; showDate?: boolean }) {
   const accName = (id?: string) => settings.accounts.find((a) => a.id === id)?.name;
   const multi = settings.accounts.length > 1;
   const isXfer = t.type === "transfer";
+  const acc = settings.accounts.find((a) => a.id === (t.accountId ?? settings.defaultAccountId));
+  const onCard = !isXfer && t.type === "expense" && acc?.kind === "card";
   const title = t.note || (isXfer ? "Transfer" : c.name);
   const bits = [
     isXfer ? `${accName(t.accountId) ?? "?"} → ${accName(t.toAccountId) ?? "?"}` : c.name,
@@ -32,6 +34,7 @@ export function TxRow({ t, showDate }: { t: Transaction; showDate?: boolean }) {
         <small>
           {t.recurringId && <Repeat aria-label="Recurring" />}
           {t.originalCurrency && <Globe aria-label="Foreign currency" />}
+          {onCard && <CreditCard aria-label="Paid by credit card" style={{ color: acc?.color }} />}
           {bits.join(" · ")}
         </small>
       </span>

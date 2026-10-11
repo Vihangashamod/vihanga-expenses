@@ -1,16 +1,18 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Transaction, TxType } from "../lib/types";
-import { thisMonth } from "../lib/format";
+import { currentPeriodKey } from "../lib/period";
+import { useStore } from "./store";
 
 export type Theme = "system" | "light" | "dark";
-type SheetState = { open: false } | { open: true; tx?: Transaction; type?: TxType };
+export type SheetPreset = Partial<Pick<Transaction, "accountId" | "toAccountId" | "amount" | "note" | "categoryId">>;
+type SheetState = { open: false } | { open: true; tx?: Transaction; type?: TxType; preset?: SheetPreset };
 interface ToastState { id: number; text: string; action?: { label: string; run: () => void } }
 
 interface UI {
   month: string;
   setMonth: (mk: string) => void;
   sheet: SheetState;
-  openSheet: (opts?: { tx?: Transaction; type?: TxType }) => void;
+  openSheet: (opts?: { tx?: Transaction; type?: TxType; preset?: SheetPreset }) => void;
   closeSheet: () => void;
   toast: ToastState | null;
   notify: (text: string, action?: ToastState["action"]) => void;
@@ -30,7 +32,13 @@ const read = (k: string) => { try { return localStorage.getItem(k); } catch { re
 const write = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } };
 
 export function UIProvider({ children }: { children: ReactNode }) {
-  const [month, setMonth] = useState(thisMonth());
+  // Follows the current period (which depends on your dates) until you pick another month.
+  const { settings } = useStore();
+  const [chosen, setChosen] = useState<string | null>(null);
+  void settings.periods;
+  const current = currentPeriodKey();
+  const month = chosen ?? current;
+  const setMonth = (mk: string) => setChosen(mk === current ? null : mk);
   const [sheet, setSheet] = useState<SheetState>({ open: false });
   const [toast, setToast] = useState<ToastState | null>(null);
   const [theme, setThemeState] = useState<Theme>(() => (read("ve-theme") as Theme) || "system");

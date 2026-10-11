@@ -122,6 +122,9 @@ export default function Accounts() {
             <h2>{sel.name}</h2>
             {!editing && (
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {sel.kind === "card" && (bal.get(sel.id) ?? 0) < 0 && (
+                  <button className="btn sm" onClick={() => openSheet({ type: "transfer", preset: { accountId: accounts.find((a) => a.kind === "bank" && !a.archived)?.id, toAccountId: sel.id, amount: -(bal.get(sel.id) ?? 0), note: `${sel.name} payment` } })}>Pay card</button>
+                )}
                 {settings.defaultAccountId !== sel.id && !sel.archived && (
                   <button className="btn secondary sm" onClick={async () => { await saveSettings({ defaultAccountId: sel.id }); notify(`${sel.name} is now the default account`); }}><Star />Make default</button>
                 )}

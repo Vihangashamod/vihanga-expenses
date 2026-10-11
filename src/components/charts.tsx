@@ -5,6 +5,7 @@ import {
 import { useUI } from "../data/ui";
 import { compact, money, monthLabel } from "../lib/format";
 import { getCategory } from "../lib/categories";
+import { periodOf, tickLabel } from "../lib/period";
 
 /** Reads theme tokens so chart strokes follow light/dark mode. */
 function useTokens() {
@@ -40,6 +41,7 @@ export function TrendChart({ current, previous, elapsed, budget, mk }: {
 }) {
   const k = useTokens();
   const days = current.length - 1;
+  const period = periodOf(mk);
   const data = Array.from({ length: days }, (_, i) => {
     const d = i + 1;
     return { d, now: d <= elapsed ? current[d] : null, prev: previous[Math.min(d, previous.length - 1)] ?? null };
@@ -48,7 +50,7 @@ export function TrendChart({ current, previous, elapsed, budget, mk }: {
   return (
     <div className="chart" role="img" aria-label={`Spending so far in ${monthLabel(mk)}: ${money(current[elapsed] ?? 0)}`}>
       <ResponsiveContainer>
-        <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -8 }}>
+        <ComposedChart data={data} margin={{ top: 8, right: 22, bottom: 0, left: -8 }}>
           <defs>
             <linearGradient id="g-now" x1="0" x2="0" y1="0" y2="1">
               <stop offset="0%" stopColor={k.accent} stopOpacity={0.28} />
@@ -56,16 +58,16 @@ export function TrendChart({ current, previous, elapsed, budget, mk }: {
             </linearGradient>
           </defs>
           <CartesianGrid vertical={false} stroke={k.line} />
-          <XAxis dataKey="d" tick={axis(k.muted)} tickLine={false} axisLine={false} ticks={[1, 8, 15, 22, days]} interval={0} />
+          <XAxis dataKey="d" tick={axis(k.muted)} tickLine={false} axisLine={false} ticks={[1, 8, 15, 22, days].filter((d, i, a) => a.indexOf(d) === i && (d === days || days - d > 3))} interval={0} tickFormatter={(d: number) => tickLabel(period, d)} />
           <YAxis tick={axis(k.muted)} tickLine={false} axisLine={false} tickFormatter={compact} width={48} domain={[0, niceMax(maxVal)]} ticks={niceTicks(maxVal)} />
           {budget ? <ReferenceLine y={budget} stroke={k.neg} strokeDasharray="4 4" strokeOpacity={0.6} label={{ value: "Budget", position: "insideTopRight", fill: k.neg, fontSize: 11 }} /> : null}
           <Tooltip
             cursor={{ stroke: k.faint, strokeDasharray: "3 3" }}
             content={({ active, payload, label }) => active && payload?.length ? (
               <div className="tip">
-                <b>Day {label}</b>
+                <b>{tickLabel({ ...period, custom: true }, Number(label))} · day {label}</b>
                 {payload.map((p) => p.value != null && (
-                  <div key={String(p.dataKey)}><span>{p.dataKey === "now" ? "This month" : "Last month"}</span>{money(Number(p.value))}</div>
+                  <div key={String(p.dataKey)}><span>{p.dataKey === "now" ? "This month" : "Same day last month"}</span>{money(Number(p.value))}</div>
                 ))}
               </div>
             ) : null}

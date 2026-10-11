@@ -14,9 +14,9 @@ export default function Insights() {
   const pFull = summarize(transactions, shiftMonth(month, -1));
   // For the current month, compare against the same days of last month so partial months stay fair.
   const p = s.phase === "current"
-    ? summarize(transactions.filter((t) => !t.date.startsWith(pFull.mk) || Number(t.date.slice(8, 10)) <= s.elapsed), pFull.mk)
+    ? summarize(transactions, pFull.mk, s.elapsed)
     : pFull;
-  const periodNote = s.phase === "current" ? ` (1–${s.elapsed})` : "";
+  const periodNote = s.phase === "current" ? ` (first ${s.elapsed} day${s.elapsed === 1 ? "" : "s"})` : "";
   const months = lastMonths(month, 6).map((mk) => summarize(transactions, mk));
   const exp = inMonth(transactions, month).filter((t) => t.type === "expense");
   const biggest = [...exp].sort((a, b) => b.amount - a.amount)[0];

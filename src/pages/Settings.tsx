@@ -5,7 +5,9 @@ import { useStore, newId, type Backup } from "../data/store";
 import { useUI, type Theme } from "../data/ui";
 import { ICONS, PALETTE, allOf, getCategory, isHidden, pickable } from "../lib/categories";
 import { CURRENCIES, fetchRates, getCurrency } from "../lib/currency";
-import { currencySymbol, money, parseAmount, thisMonth } from "../lib/format";
+import { currencySymbol, money, monthLabel as monthLabelFn, parseAmount, shortDate, thisMonth } from "../lib/format";
+
+const fmtDay = (iso: string) => shortDate(iso, true);
 import type { CatType, CustomCategory, Recurring } from "../lib/types";
 import { Avatar, CatTile } from "../components/bits";
 import { downloadCSV, toCSV } from "./Transactions";
@@ -221,7 +223,7 @@ export default function Settings() {
       <div className="page-head"><div><h1>Settings</h1><p>Your account, currency, categories, recurring items and data.</p></div></div>
 
       <nav className="settings-nav" aria-label="Settings sections">
-        <a href="#profile">Profile</a><a href="#currency">Currency</a><a href="#display">Display</a>
+        <a href="#profile">Profile</a><a href="#currency">Currency</a><a href="#leftover">Months</a><a href="#display">Display</a>
         <a href="#categories">Categories</a><a href="#recurring">Recurring</a><a href="#data">Data</a>
       </nav>
 
@@ -270,6 +272,33 @@ export default function Settings() {
               })}
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className="card" id="leftover">
+        <div className="card-head"><h2>Months & leftover money</h2></div>
+        <div className="settings-list">
+          <div className="set-row" style={{ alignItems: "flex-start" }}>
+            <span className="t"><b>Money left at the end of a month</b>
+              <small>{settings.leftover === "carry" ? "Rolls into next month's “left to spend”. Overspending is taken off next month."
+                : settings.leftover === "save" ? "Counted as savings and shown in its own section on the overview."
+                : "Each month starts fresh."}</small></span>
+            <div className="seg" role="group" aria-label="Leftover money">
+              <button aria-pressed={settings.leftover === "carry"} onClick={() => void saveSettings({ leftover: "carry" })}>Carry over</button>
+              <button aria-pressed={settings.leftover === "save"} onClick={() => void saveSettings({ leftover: "save" })}>Save it</button>
+              <button aria-pressed={settings.leftover === "none"} onClick={() => void saveSettings({ leftover: "none" })}>Nothing</button>
+            </div>
+          </div>
+          <div className="set-row" style={{ alignItems: "flex-start" }}>
+            <span className="t"><b>Month dates</b>
+              <small>Tap the calendar button beside the month name to choose when a month starts and ends, like 25 Sep – 24 Oct. Later months continue from it.</small></span>
+          </div>
+          {Object.entries(settings.periods).sort(([a], [b]) => b.localeCompare(a)).map(([mk, r]) => (
+            <div className="set-row" key={mk}>
+              <span className="t"><b>{monthLabelFn(mk)}</b><small>{fmtDay(r.start)} – {fmtDay(r.end)}</small></span>
+              <button className="btn ghost sm" onClick={() => { const next = { ...settings.periods }; delete next[mk]; void saveSettings({ periods: next }); notify(`Removed the dates for ${monthLabelFn(mk)}`); }}>Remove</button>
+            </div>
+          ))}
         </div>
       </section>
 

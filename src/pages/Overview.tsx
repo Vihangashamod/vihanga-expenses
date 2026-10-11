@@ -1,10 +1,11 @@
 import { Link } from "react-router-dom";
-import { ArrowDownLeft, ArrowUpRight, CalendarClock, Wallet, Gauge, Plus, Receipt } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, CalendarClock, Wallet, Gauge, Plus, Receipt, PiggyBank, Repeat2 } from "lucide-react";
 import { useStore } from "../data/store";
 import { useUI } from "../data/ui";
-import { balances, cumulative, summarize } from "../lib/analytics";
+import { balances, cumulative, inMonth, leftover, summarize } from "../lib/analytics";
 import { AccountIcon } from "../components/AccountIcon";
-import { currencySymbol, daysInMonth, isPrivate, money, monthLabel, shiftMonth, thisMonth } from "../lib/format";
+import { currencySymbol, dayLabel, isPrivate, money, monthKey, monthLabel, shiftMonth, todayISO } from "../lib/format";
+import { currentPeriodKey, daysBetween, rangeLabel } from "../lib/period";
 import { getCategory } from "../lib/categories";
 import { CatTile, MonthSwitch } from "../components/bits";
 import { TxRow, sortTx } from "../components/TxList";
@@ -21,7 +22,11 @@ export default function Overview() {
   const s = summarize(transactions, month);
   const prev = summarize(transactions, shiftMonth(month, -1));
   const budget = settings.monthlyBudget || 0;
-  const reference = budget || s.income; // what we measure spending against
+  const lo = leftover(transactions, month, settings.monthlyBudget, settings.leftover);
+  const carried = settings.leftover === "carry" ? Math.round(lo.carriedIn) : 0;
+  const prevName = monthLabel(shiftMonth(month, -1), "long", false);
+  // What spending is measured against: budget (or income) plus anything carried over.
+  const reference = (budget || s.income) + carried;
   const left = reference - s.expense;
   const daysLeft = s.phase === "current" ? s.days - s.elapsed + 1 : s.phase === "future" ? s.days : 0;
   const expected = reference * (s.elapsed / s.days);
@@ -39,16 +44,28 @@ export default function Overview() {
   else { line = `Right on pace for day ${s.elapsed} of ${s.days}.`; }
 
   const pct = reference ? Math.min(s.expense / reference, 1) * 100 : 0;
-  const recent = transactions.filter((t) => t.date.startsWith(month)).sort(sortTx).slice(0, 6);
+  const recent = inMonth(transactions, month).sort(sortTx).slice(0, 6);
   const curve = cumulative(transactions, month);
   const prevCurve = cumulative(transactions, shiftMonth(month, -1));
 
-  const isNow = month === thisMonth();
-  const today = new Date().getDate();
+  const isNow = month === currentPeriodKey();
+  const todayIso = todayISO();
+  // Next date each recurring item posts, if it falls later in this period.
   const upcoming = isNow
-    ? recurring.filter((r) => r.active && (r.lastPosted ?? "") < month && Math.min(r.dayOfMonth, daysInMonth(month)) > today)
-        .sort((a, b) => a.dayOfMonth - b.dayOfMonth)
+    ? recurring.filter((r) => r.active).map((r) => {
+        const cm = monthKey(new Date());
+        for (const cand of [cm, shiftMonth(cm, 1)]) {
+          const [y, m] = cand.split("-").map(Number);
+          const day = Math.min(r.dayOfMonth, new Date(y, m, 0).getDate());
+          const date = `${cand}-${String(day).padStart(2, "0")}`;
+          if (date > todayIso && date <= s.period.end && (r.lastPosted ?? "") < cand) return { r, date };
+        }
+        return null;
+      }).filter((x): x is { r: typeof recurring[number]; date: string } => !!x).sort((a, b) => a.date.localeCompare(b.date))
     : [];
+  const cards = settings.accounts.filter((a) => a.kind === "card" && !a.archived);
+  const payFrom = settings.accounts.find((a) => a.kind === "bank" && !a.archived)?.id ?? settings.defaultAccountId;
+  const monthTx = inMonth(transactions, month);
   const alerts = Object.entries(settings.budgets)
     .map(([id, limit]) => ({ id, limit, spent: s.byCategory.find((c) => c.id === id)?.total ?? 0 }))
     .filter((b) => b.limit > 0 && b.spent / b.limit >= 0.8)
@@ -70,7 +87,7 @@ export default function Overview() {
 
       <section className="hero" aria-label="Month summary">
         <div className="hero-left">
-          <div className="eyebrow">Spent in {monthLabel(month, "long", false)}</div>
+          <div className="eyebrow">Spent in {monthLabel(month, "long", false)}{s.period.custom ? ` · ${rangeLabel(s.period)}` : ""}</div>
           <div className="big"><span className="cur">{currencySymbol()}</span>{isPrivate() ? "••••" : Math.round(s.expense).toLocaleString("en-US")}</div>
           <div className="sub"><span className="pace" data-k={k}><i />{chip}</span><span>{line}</span></div>
           {reference > 0 && (
@@ -80,7 +97,7 @@ export default function Overview() {
                 {s.phase === "current" && <div className="meter-mark" style={{ left: `${(s.elapsed / s.days) * 100}%` }} title="Even pace for today" />}
               </div>
               <div className="meter-legend">
-                <span>{Math.round((s.expense / reference) * 100)}% of {budget ? `${money(budget)} budget` : "income"}</span>
+                <span>{Math.round((s.expense / reference) * 100)}% of {money(reference)}{carried ? ` (${budget ? "budget" : "income"} ${carried > 0 ? "+" : "−"} ${money(Math.abs(carried))} from ${prevName})` : budget ? " budget" : " income"}</span>
                 {s.phase === "current" && <span>Line = today’s even pace</span>}
               </div>
             </div>
@@ -95,6 +112,13 @@ export default function Overview() {
             <dd>{s.phase === "current" ? money(Math.max(left, 0) / daysLeft) : money(s.elapsed ? s.expense / s.elapsed : 0)}</dd>
             {s.phase === "current" && <div className="hint">for {daysLeft} day{daysLeft === 1 ? "" : "s"} left</div>}
           </div>
+          {carried !== 0 && (
+            <div className="hero-stat wide"><dt><Repeat2 />{carried > 0 ? `Carried over from ${prevName}` : `Overspent in ${prevName}`}</dt><dd>{money(carried, { sign: true })}</dd>
+              <div className="hint">{carried > 0 ? "Added to what you can spend this month." : "Taken off what you can spend this month."}</div></div>
+          )}
+          {settings.leftover === "save" && lo.saved > 0 && (
+            <div className="hero-stat wide"><dt><PiggyBank />Saved from past months</dt><dd>{money(lo.saved)}</dd></div>
+          )}
         </dl>
       </section>
 
@@ -115,13 +139,41 @@ export default function Overview() {
         </section>
       )}
 
+      {(cards.length > 0 || settings.leftover !== "none" || lo.rows.length > 0) && (
+        <div className={cards.length ? "grid-2 even" : ""}>
+          {cards.length > 0 && (
+            <section className="card">
+              <div className="card-head"><h2>Credit cards</h2><span className="meta">Spent on cards: <b className="num" style={{ color: "var(--ink)" }}>{money(cards.reduce((a, c) => a + monthTx.filter((t) => t.type === "expense" && t.accountId === c.id).reduce((x, t) => x + t.amount, 0), 0))}</b></span></div>
+              <div className="stack">
+                {cards.map((c) => {
+                  const owed = Math.max(-(bal.get(c.id) ?? 0), 0);
+                  const spent = monthTx.filter((t) => t.type === "expense" && t.accountId === c.id).reduce((x, t) => x + t.amount, 0);
+                  const paid = monthTx.filter((t) => t.type === "transfer" && t.toAccountId === c.id).reduce((x, t) => x + t.amount, 0);
+                  return (
+                    <div className="cat-line" key={c.id}>
+                      <AccountIcon kind={c.kind} color={c.color} tile />
+                      <span className="n">{c.name}<small>{money(spent)} spent{paid ? ` · ${money(paid)} paid` : ""} this month</small></span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span className="v">{owed ? money(owed) : "Nothing"}<small>{owed ? "to pay" : "owed"}</small></span>
+                        {owed > 0 && <button className="btn secondary sm" onClick={() => openSheet({ type: "transfer", preset: { accountId: payFrom, toAccountId: c.id, amount: owed, note: `${c.name} payment` } })}>Pay</button>}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+          <LeftoverCard rows={lo.rows} mode={settings.leftover} saved={lo.saved} thisLeft={left} isNow={isNow} />
+        </div>
+      )}
+
       <div className="grid-2">
         <section className="card">
           <div className="card-head">
             <h2>Spending this month</h2>
             <span className="meta">{prev.expense > 0 && s.phase !== "future" ? compareText(curve[s.elapsed], prevCurve[Math.min(s.elapsed, prevCurve.length - 1)]) : ""}</span>
           </div>
-          <TrendChart current={curve} previous={prevCurve} elapsed={s.elapsed} budget={budget || undefined} mk={month} />
+          <TrendChart current={curve} previous={prevCurve} elapsed={s.elapsed} budget={reference || undefined} mk={month} />
           <div className="chart-legend">
             <span><i className="line" style={{ borderColor: "var(--accent)" }} />{monthLabel(month, "long", false)}</span>
             <span><i className="dash" style={{ borderColor: "var(--faint)" }} />{monthLabel(shiftMonth(month, -1), "long", false)}</span>
@@ -173,13 +225,16 @@ export default function Overview() {
             <div className="empty"><CalendarClock /><b>All clear</b>No bills due later this month and every budget has room.</div>
           ) : (
             <div className="stack">
-              {upcoming.map((r) => (
-                <div className="cat-line" key={r.id}>
-                  <CatTile id={r.categoryId} size="sm" />
-                  <span className="n">{r.note}<small>Due {monthLabel(month, "short", false)} {r.dayOfMonth} · in {r.dayOfMonth - today} day{r.dayOfMonth - today === 1 ? "" : "s"}</small></span>
-                  <span className={`v ${r.type === "income" ? "amt in" : ""}`}>{r.type === "income" ? "+" : ""}{money(r.amount)}</span>
-                </div>
-              ))}
+              {upcoming.map(({ r, date }) => {
+                const inDays = daysBetween(todayIso, date);
+                return (
+                  <div className="cat-line" key={r.id}>
+                    <CatTile id={r.categoryId} size="sm" />
+                    <span className="n">{r.note}<small>Due {dayLabel(date)} · in {inDays} day{inDays === 1 ? "" : "s"}</small></span>
+                    <span className={`v ${r.type === "income" ? "amt in" : ""}`}>{r.type === "income" ? "+" : ""}{money(r.amount)}</span>
+                  </div>
+                );
+              })}
               {alerts.map((a) => (
                 <div className="cat-line" key={a.id}>
                   <CatTile id={a.id} size="sm" />
@@ -201,4 +256,43 @@ function compareText(now: number, then: number) {
   const pct = Math.round((Math.abs(d) / then) * 100);
   if (pct < 3) return "Same as last month so far";
   return `${pct}% ${d > 0 ? "more" : "less"} than last month so far`;
+}
+
+function LeftoverCard({ rows, mode, saved, thisLeft, isNow }: {
+  rows: { mk: string; base: number; carriedIn: number; spent: number; left: number }[];
+  mode: "carry" | "save" | "none"; saved: number; thisLeft: number; isNow: boolean;
+}) {
+  const recent = rows.slice(-4).reverse();
+  return (
+    <section className="card">
+      <div className="card-head">
+        <h2>{mode === "save" ? "Savings from leftovers" : "Leftover money"}</h2>
+        <Link className="more" to="/settings#leftover">{mode === "none" ? "Turn on" : "Change"}</Link>
+      </div>
+      {mode === "none" ? (
+        <p style={{ margin: 0, color: "var(--muted)", fontSize: 14 }}>Choose whether money left at the end of a month rolls into the next month or goes to savings.</p>
+      ) : (
+        <>
+          <p style={{ margin: "0 0 12px", fontSize: 14, color: "var(--ink-2)" }}>
+            {mode === "carry"
+              ? isNow ? `If the month ended today, ${money(Math.max(thisLeft, 0))} would roll into next month.` : "What each month passed on to the next."
+              : <>You've kept <b>{money(saved)}</b> across past months.</>}
+          </p>
+          {recent.length === 0 ? <p style={{ margin: 0, color: "var(--muted)", fontSize: 14 }}>Finished months will appear here.</p> : (
+            <div className="stack" style={{ gap: 10 }}>
+              {recent.map((r) => {
+                const v = mode === "save" ? r.base - r.spent : r.left;
+                return (
+                  <div key={r.mk} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, fontSize: 14 }}>
+                    <span>{monthLabel(r.mk)}<small style={{ display: "block", color: "var(--muted)", fontSize: 12.5 }}>{money(r.spent)} spent of {money(r.base + (mode === "carry" ? r.carriedIn : 0))}</small></span>
+                    <span className={`chip ${v >= 0 ? "pos" : "neg"}`}>{v >= 0 ? (mode === "save" ? "Saved " : "Left ") : "Over "}{money(Math.abs(v))}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
 }

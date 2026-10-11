@@ -32,11 +32,11 @@ function Gate() {
 export default function App() {
   return (
     <BrowserRouter>
-      <UIProvider>
-        <StoreProvider>
+      <StoreProvider>
+        <UIProvider>
           <Gate />
-        </StoreProvider>
-      </UIProvider>
+        </UIProvider>
+      </StoreProvider>
     </BrowserRouter>
   );
 }

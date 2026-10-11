@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, Trash2, X } from "lucide-react";
 import { useStore, newId } from "../data/store";
-import { useUI } from "../data/ui";
+import { useUI, type SheetPreset } from "../data/ui";
 import { getCategory, pickable } from "../lib/categories";
 import { CURRENCIES, getCurrency, rateToBase } from "../lib/currency";
-import { money, parseAmount, thisMonth, todayISO } from "../lib/format";
+import { money, parseAmount, todayISO } from "../lib/format";
+import { currentPeriodKey, inPeriod, periodKeyFor, periodOf } from "../lib/period";
 import type { CatType, Transaction, TxType } from "../lib/types";
 import { CatTile } from "./bits";
 import { AccountIcon } from "./AccountIcon";
@@ -12,27 +13,29 @@ import { AccountIcon } from "./AccountIcon";
 export function TransactionSheet() {
   const { sheet, closeSheet } = useUI();
   if (!sheet.open) return null;
-  return <SheetBody key={sheet.tx?.id ?? `new-${sheet.type ?? "expense"}`} tx={sheet.tx} initialType={sheet.type} onClose={closeSheet} />;
+  return <SheetBody key={sheet.tx?.id ?? `new-${sheet.type ?? "expense"}`} tx={sheet.tx} initialType={sheet.type} preset={sheet.preset} onClose={closeSheet} />;
 }
 
-function SheetBody({ tx, initialType, onClose }: { tx?: Transaction; initialType?: TxType; onClose: () => void }) {
+function SheetBody({ tx, initialType, preset, onClose }: { tx?: Transaction; initialType?: TxType; preset?: SheetPreset; onClose: () => void }) {
   const { saveTransaction, deleteTransaction, saveRecurring, transactions, settings } = useStore();
   const { notify, month, setMonth } = useUI();
   const base = settings.currency;
   const accounts = settings.accounts.filter((a) => !a.archived || a.id === tx?.accountId || a.id === tx?.toAccountId);
   const defaultAcc = accounts.find((a) => a.id === settings.defaultAccountId)?.id ?? accounts[0]?.id ?? "";
   const editing = !!tx;
-  const defaultDate = month >= thisMonth() ? todayISO() : `${month}-01`;
+  const period = periodOf(month);
+  const defaultDate = inPeriod(period, todayISO()) ? todayISO() : month > currentPeriodKey() ? period.start : period.end;
 
   const [type, setType] = useState<TxType>(tx?.type ?? initialType ?? "expense");
   const [currency, setCurrency] = useState(tx?.originalCurrency ?? base);
-  const [amount, setAmount] = useState(tx ? String(tx.originalAmount ?? tx.amount) : "");
+  const [amount, setAmount] = useState(tx ? String(tx.originalAmount ?? tx.amount) : preset?.amount ? String(Math.round(preset.amount * 100) / 100) : "");
   const [rate, setRate] = useState(tx?.rate ? String(tx.rate) : "");
   const [rateState, setRateState] = useState<"idle" | "loading" | "live" | "manual" | "failed">(tx?.rate ? "manual" : "idle");
-  const [categoryId, setCategoryId] = useState(tx?.categoryId ?? (initialType === "income" ? "salary" : "groceries"));
-  const [accountId, setAccountId] = useState(tx?.accountId ?? defaultAcc);
-  const [toAccountId, setToAccountId] = useState(tx?.toAccountId ?? accounts.find((a) => a.id !== (tx?.accountId ?? defaultAcc))?.id ?? "");
-  const [note, setNote] = useState(tx?.note ?? "");
+  const [categoryId, setCategoryId] = useState(tx?.categoryId ?? preset?.categoryId ?? (initialType === "income" ? "salary" : "groceries"));
+  const startAcc = tx?.accountId ?? preset?.accountId ?? defaultAcc;
+  const [accountId, setAccountId] = useState(startAcc);
+  const [toAccountId, setToAccountId] = useState(tx?.toAccountId ?? preset?.toAccountId ?? accounts.find((a) => a.id !== startAcc)?.id ?? "");
+  const [note, setNote] = useState(tx?.note ?? preset?.note ?? "");
   const [date, setDate] = useState(tx?.date ?? defaultDate);
   const [repeat, setRepeat] = useState(false);
   const [err, setErr] = useState("");
@@ -124,7 +127,7 @@ function SheetBody({ tx, initialType, onClose }: { tx?: Transaction; initialType
           dayOfMonth: Math.min(Number(date.slice(8, 10)), 28), active: true, lastPosted: date.slice(0, 7), createdAt: Date.now() }));
       }
       onClose();
-      if (date.slice(0, 7) !== month) setMonth(date.slice(0, 7));
+      if (periodKeyFor(date) !== month) setMonth(periodKeyFor(date));
       const label = type === "income" ? "Income added" : type === "transfer" ? "Transfer saved" : "Expense added";
       notify(editing ? "Changes saved" : `${label} · ${foreign ? `${money(n, { currency, exact: true })} = ` : ""}${money(converted)}`);
       await Promise.all(writes);

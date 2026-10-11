@@ -73,6 +73,10 @@ export interface Settings {
   privacy: boolean;
   /** First day of the week for weekday charts: 0 = Sunday, 1 = Monday */
   weekStart: 0 | 1;
+  /** What happens to money left at the end of a month */
+  leftover: "carry" | "save" | "none";
+  /** Your own month dates, keyed by month: { "2026-10": { start: "2026-09-25", end: "2026-10-24" } } */
+  periods: Record<string, { start: string; end: string }>;
   /** Currencies offered first in the entry sheet */
   favoriteCurrencies: string[];
   legacyImported?: boolean;
@@ -94,6 +98,8 @@ export const DEFAULT_SETTINGS: Settings = {
   privacy: false,
   weekStart: 1,
   favoriteCurrencies: ["USD", "EUR", "GBP"],
+  periods: {},
+  leftover: "carry",
 };
 
 export function withDefaults(data: Partial<Settings>): Settings {
@@ -104,6 +110,7 @@ export function withDefaults(data: Partial<Settings>): Settings {
     accounts: data.accounts?.length ? data.accounts : DEFAULT_ACCOUNTS,
     customCategories: data.customCategories ?? [],
     hiddenCategories: data.hiddenCategories ?? [],
+    periods: data.periods ?? {},
     favoriteCurrencies: data.favoriteCurrencies ?? DEFAULT_SETTINGS.favoriteCurrencies,
   };
 }
