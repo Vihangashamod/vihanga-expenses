@@ -1,0 +1,36 @@
+# Builds the app and publishes it to https://vihanga-expenses.web.app on every push to main.
+name: Deploy to Firebase Hosting
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-live
+  cancel-in-progress: true
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Deploy to live site
+        if: ${{ env.HAS_SECRET == 'true' }}
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_VIHANGA_EXPENSES }}
+          channelId: live
+          projectId: vihanga-expenses
+      - name: Explain missing secret
+        if: ${{ env.HAS_SECRET != 'true' }}
+        run: |
+          echo "::warning::Build passed, but nothing was deployed: the FIREBASE_SERVICE_ACCOUNT_VIHANGA_EXPENSES secret is missing. Run scripts/setup-autodeploy.sh once on your computer to add it."
+    env:
+      HAS_SECRET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_VIHANGA_EXPENSES != '' }}
