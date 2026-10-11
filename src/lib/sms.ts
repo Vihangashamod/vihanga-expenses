@@ -147,12 +147,27 @@ const finacle: Reader = (msg) => {
   };
 };
 
+/* Currency codes and symbols seen in alerts. Code before or after the number: "USD 13.99", "13.99 USD", "$13.99". */
+const SYMBOLS: Record<string, string> = { "US$": "USD", "$": "USD", "€": "EUR", "£": "GBP", "₹": "INR", "RS": "LKR", "RS.": "LKR", "SLR": "LKR" };
+const CODES = "LKR|USD|EUR|GBP|AUD|CAD|SGD|AED|SAR|QAR|KWD|OMR|BHD|INR|MVR|JPY|CNY|MYR|THB|HKD|CHF|NZD";
+function findAmount(msg: string): { raw: string; value: string; currency: string } | null {
+  const before = msg.match(new RegExp(`(${CODES}|US\\$|Rs\\.?|SLR|[$€£₹])\\s*:?\\s*([\\d,]+(?:\\.\\d{1,3})?)`, "i"));
+  const after = msg.match(new RegExp(`([\\d,]+(?:\\.\\d{1,3})?)\\s*(${CODES}|Rs\\b)`, "i"));
+  const pick = before && (!after || (before.index ?? 0) <= (after.index ?? 0))
+    ? { raw: before[0], value: before[2], cur: before[1] }
+    : after ? { raw: after[0], value: after[1], cur: after[2] } : null;
+  if (!pick || !/\d/.test(pick.value)) return null;
+  const c = pick.cur.toUpperCase();
+  return { raw: pick.raw, value: pick.value, currency: SYMBOLS[c] ?? c };
+}
+
 // Fallback for other banks and wordings: an amount with LKR/Rs and a date somewhere in the message.
 const OUT = /\b(debit(?:ed)?|debit ed|purchase[sd]?|paid|payment|spent|charged|withdrawn|withdrawal|deducted|transferred to|sent to)\b/i;
 const IN = /\b(credit(?:ed)?|credit ed|received|deposit(?:ed)?|refund(?:ed)?|reversal|reversed|salary)\b/i;
 
 const generic: Reader = (msg) => {
-  const amt = msg.match(/(?:LKR|Rs\.?|SLR)\s*:?\s*([\d,]+(?:\.\d{1,2})?)/i) ?? msg.match(/([\d,]+(?:\.\d{1,2})?)\s*(?:LKR|Rs\b)/i);
+  const found = findAmount(msg);
+  const amt = found ? [found.raw, found.value] as const : null;
   const date = msg.match(/(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})/);
   if (!amt || !date) return null;
   const iso = isoFrom(date[1], date[2], date[3]);
@@ -160,10 +175,10 @@ const generic: Reader = (msg) => {
   const out = OUT.test(msg), inn = IN.test(msg);
   const credit = inn && !out;
   const at = msg.match(/(?:\bat\b|@|\bto\b|Merchant\s*:|Location\s*:|Payee\s*:)\s*([A-Za-z][A-Za-z0-9 &'.-]{2,40}?)(?=\s*(?:,|\.\s|\bon\b|\bfor\b|\bLKR\b|\bRs\b|$))/i)?.[1];
-  const kind: ParsedAlert["kind"] = /atm|withdraw|cash/i.test(msg) ? "withdrawal" : /charge|fee|commission/i.test(msg) && !/purchase|paid at/i.test(msg) ? "charge"
-    : /purchase|pos|paid|payment|spent/i.test(msg) ? "purchase" : /transfer|ceft|slips/i.test(msg) ? "transfer" : credit ? "deposit" : "other";
+  const kind: ParsedAlert["kind"] = /atm|withdraw|cash/i.test(msg) ? "withdrawal" : /\b(fees?|commission|charges)\b|alert charge|service charge/i.test(msg) && !/purchase|paid at|charged .{0,30}\bat\b/i.test(msg) ? "charge"
+    : /purchase|pos|paid|payment|spent|charged/i.test(msg) ? "purchase" : /transfer|ceft|slips/i.test(msg) ? "transfer" : credit ? "deposit" : "other";
   return {
-    date: iso, time: msg.match(/(\d{1,2}:\d{2})/)?.[1], amount: num(amt[1]), currency: "LKR",
+    date: iso, time: msg.match(/(\d{1,2}:\d{2})/)?.[1], amount: num(amt[1]), currency: found!.currency,
     direction: credit ? "credit" : "debit", kind,
     merchant: cleanMerchant(at && kind !== "withdrawal" ? at : kind === "withdrawal" ? "ATM withdrawal" : credit ? "Bank credit" : kind === "charge" ? "Bank charge" : "Bank debit"),
     digits: trailingDigits(msg.match(/(?:A\/?C|Ac No|account|card)[^\d]{0,12}([\dX*]{4,})/i)?.[1] ?? ""),

@@ -5,7 +5,8 @@ import { useStore } from "../data/store";
 import { useUI } from "../data/ui";
 import { parseAlerts, merchantKey, type ParsedAlert } from "../lib/sms";
 import { getCategory, pickable } from "../lib/categories";
-import { money, shortDate } from "../lib/format";
+import { money, parseAmount, shortDate } from "../lib/format";
+import { rateToBase } from "../lib/currency";
 import type { Transaction } from "../lib/types";
 import { CatTile } from "../components/bits";
 
@@ -15,6 +16,8 @@ interface Row extends ParsedAlert {
   note: string;
   type: Transaction["type"];
   toAccountId?: string;
+  /** Base units per 1 unit of the alert's currency, for foreign-currency alerts */
+  rate?: string;
 }
 
 export default function Import() {
@@ -48,6 +51,14 @@ export default function Import() {
         accountId: a.accountId ?? (accounts.find((x) => x.kind === "bank")?.id ?? settings.defaultAccountId),
       };
     }));
+    // Look up today's rate for alerts in another currency (e.g. USD card payments).
+    const foreign = [...new Set(res.alerts.map((a) => a.currency).filter((c) => c !== settings.currency))];
+    foreign.forEach((cur) => {
+      rateToBase(cur, settings.currency).then((r) => {
+        if (!r) return;
+        setRows((rs) => rs?.map((x) => (x.currency === cur && !x.rate ? { ...x, rate: String(+r.toFixed(4)) } : x)) ?? null);
+      });
+    });
   };
 
   // Alerts sent from the iPhone Shortcut arrive in the address after "#sms=" (never sent to a server).
@@ -79,12 +90,17 @@ export default function Import() {
     notify(`Alerts for …${digits.slice(-4)} will go to ${settings.accounts.find((a) => a.id === accountId)?.name}`);
   };
 
+  const isForeign = (r: Row) => r.currency !== settings.currency;
+  const rateOf = (r: Row) => (isForeign(r) ? parseAmount(r.rate ?? "") : 1);
+  const baseAmount = (r: Row) => Math.round(r.amount * rateOf(r) * 100) / 100;
   const chosen = (rows ?? []).filter((r) => r.include);
+  const missingRate = chosen.some((r) => isForeign(r) && !(rateOf(r) > 0));
   const add = async () => {
     if (!chosen.length) return;
     setBusy(true);
     const txs: Transaction[] = chosen.map((r, i) => ({
-      id: r.key, type: r.type, amount: r.amount, note: r.note.trim() || r.merchant, date: r.date,
+      id: r.key, type: r.type, amount: baseAmount(r),
+      ...(isForeign(r) ? { originalCurrency: r.currency, originalAmount: r.amount, rate: rateOf(r) } : {}), note: r.note.trim() || r.merchant, date: r.date,
       categoryId: r.type === "transfer" ? "transfer" : r.categoryId,
       createdAt: Date.now() + i, source: "sms",
       ...(r.accountId ? { accountId: r.accountId } : {}),
@@ -143,7 +159,7 @@ export default function Import() {
         <section className="card">
           <div className="card-head">
             <h2>{rows.length ? `Found ${rows.length} transaction${rows.length === 1 ? "" : "s"}` : "No transactions found"}</h2>
-            {rows.length > 0 && <span className="meta">{chosen.length} selected · {money(chosen.filter((r) => r.type === "expense").reduce((a, r) => a + r.amount, 0))} spent</span>}
+            {rows.length > 0 && <span className="meta">{chosen.length} selected · {money(chosen.filter((r) => r.type === "expense").reduce((a, r) => a + (baseAmount(r) || 0), 0))} spent</span>}
           </div>
           {rows.length === 0 && <p style={{ margin: 0, color: "var(--muted)", fontSize: 14 }}>Nothing in the pasted text looked like a bank alert with an amount and a date.</p>}
           <div className="import-list">
@@ -171,8 +187,15 @@ export default function Import() {
                     </div>
                   </div>
                   <span className={`amt ${r.type === "income" ? "in" : r.type === "transfer" ? "xfer" : ""}`}>
-                    {r.type === "income" ? "+" : r.type === "transfer" ? "" : "−"}{money(r.amount, { exact: true, currency: r.currency === "LKR" ? undefined : r.currency })}
-                    {r.balance != null && <span className="fx-note">Bal {money(r.balance, { exact: true })}</span>}
+                    {r.type === "income" ? "+" : r.type === "transfer" ? "" : "−"}{money(r.amount, { exact: true, currency: r.currency })}
+                    {isForeign(r) && (
+                      <span className="fx-note">
+                        {rateOf(r) > 0 ? `≈ ${money(baseAmount(r), { exact: true })}` : "Needs a rate"}
+                        <label className="fx-inline">1 {r.currency} = <input inputMode="decimal" value={r.rate ?? ""} placeholder="rate"
+                          onChange={(e) => update(r.key, { rate: e.target.value.replace(/[^\d.,]/g, "") })} aria-label={`${settings.currency} per 1 ${r.currency}`} /> {settings.currency}</label>
+                      </span>
+                    )}
+                    {r.balance != null && !isForeign(r) && <span className="fx-note">Bal {money(r.balance, { exact: true })}</span>}
                   </span>
                 </div>
               );
@@ -181,7 +204,8 @@ export default function Import() {
           {skipped.length > 0 && <p style={{ margin: "12px 0 0", fontSize: 13, color: "var(--muted)" }}>Skipped {skipped.length}: {skipped.join(" · ")}</p>}
           {rows.length > 0 && (
             <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-              <button className="btn" disabled={!chosen.length || busy} onClick={add}><Check />Add {chosen.length} transaction{chosen.length === 1 ? "" : "s"}</button>
+              {missingRate && <span style={{ fontSize: 13, color: "var(--warn)", alignSelf: "center" }}>Type the exchange rate for the foreign-currency rows first.</span>}
+              <button className="btn" disabled={!chosen.length || busy || missingRate} onClick={add}><Check />Add {chosen.length} transaction{chosen.length === 1 ? "" : "s"}</button>
             </div>
           )}
         </section>
